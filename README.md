@@ -524,7 +524,7 @@ print(f"Task failed: {info.error}")  # "Value cannot be negative"
 ```
 
 
-## API Router
+## API Router - Control API for Task Worker
 
 The AsyncTaskWorker library includes a FastAPI router that you can integrate into your existing FastAPI applications to expose the task worker functionality via a RESTful API.
 
@@ -533,44 +533,23 @@ The AsyncTaskWorker library includes a FastAPI router that you can integrate int
 ```python
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from task_worker import AsyncTaskWorker
-from task_worker.task_worker_api import create_task_worker_router
+from task_worker import AsyncTaskWorker, create_task_worker_router
 
 # Create task worker
-worker = AsyncTaskWorker(
-    max_workers=10,
-    cache_enabled=True
-)
+worker = AsyncTaskWorker(max_workers=10, cache_enabled=True)
 
 # Define application lifespan
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start the worker when the application starts
-    await worker.start()
+    await worker.start()  # Start worker when app starts
     yield
-    # Stop the worker when the application shuts down
-    await worker.stop()
+    await worker.stop()   # Stop worker when app shuts down
 
 # Create FastAPI app with lifespan
 app = FastAPI(lifespan=lifespan)
 
 # Create and include the task worker router
-task_router = create_task_worker_router(worker)
-app.include_router(task_router)
-
-# Manage worker lifecycle using FastAPI's lifespan
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Start the worker when the application starts
-    await worker.start()
-    yield
-    # Stop the worker when the application shuts down
-    await worker.stop()
-
-# Pass the lifespan to FastAPI
-app = FastAPI(lifespan=lifespan)
+app.include_router(create_task_worker_router(worker))
 ```
 
 ### Router Customization
