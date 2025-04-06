@@ -533,7 +533,7 @@ The AsyncTaskWorker library includes a FastAPI router that you can integrate int
 ```python
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from task_worker import AsyncTaskWorker, create_task_worker_router
+from task_worker.task_worker_api import AsyncTaskWorker, create_task_worker_router
 
 # Create task worker
 worker = AsyncTaskWorker(max_workers=10, cache_enabled=True)
@@ -619,16 +619,6 @@ async def check_task(task_id):
             else:
                 return f"Task is {status} ({task_data['progress']*100:.1f}% complete)"
 ```
-
-### Security Considerations
-
-The API router does not include authentication or authorization mechanisms. When exposing this API, consider adding security measures appropriate for your application, such as:
-
-- API key authentication
-- JWT-based authentication
-- Role-based access control
-
-You can implement these using FastAPI's dependency system or middleware.
 
 
 ## License
