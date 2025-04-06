@@ -523,6 +523,121 @@ assert info.status == TaskStatus.FAILED
 print(f"Task failed: {info.error}")  # "Value cannot be negative"
 ```
 
+
+## API Router
+
+The AsyncTaskWorker library includes a FastAPI router that you can integrate into your existing FastAPI applications to expose the task worker functionality via a RESTful API.
+
+### Quick Start
+
+```python
+from fastapi import FastAPI
+from task_worker import AsyncTaskWorker
+from task_worker.task_worker_api import create_task_worker_router
+
+# Create FastAPI app
+app = FastAPI()
+
+# Create task worker
+worker = AsyncTaskWorker(
+    max_workers=10,
+    cache_enabled=True
+)
+
+# Create and include the task worker router
+task_router = create_task_worker_router(worker)
+app.include_router(task_router)
+
+# Start the worker when the application starts
+@app.on_event("startup")
+async def startup_event():
+    await worker.start()
+    
+# Stop the worker when the application shuts down
+@app.on_event("shutdown")
+async def shutdown_event():
+    await worker.stop()
+```
+
+### Router Customization
+
+You can customize the router with the following options:
+
+```python
+task_router = create_task_worker_router(
+    worker,
+    prefix="/api/v1",  # Add a URL prefix to all routes
+    tags=["background-tasks"]  # Custom OpenAPI documentation tags
+)
+```
+
+### Available Endpoints
+
+The router provides the following endpoints:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/tasks` | Submit a new task for execution |
+| GET | `/tasks/{task_id}` | Get status and results of a specific task |
+| DELETE | `/tasks/{task_id}` | Cancel a running or pending task |
+| GET | `/tasks` | List tasks with optional filtering |
+| GET | `/tasks/types` | Get a list of all registered task types |
+| GET | `/health` | Check the health of the task worker service |
+
+### Example: Submitting a Task
+
+```python
+import httpx
+
+async def submit_task():
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "http://localhost:8000/tasks",
+            json={
+                "task_type": "process_data",
+                "params": {
+                    "data_id": "123",
+                    "options": {"normalize": True}
+                },
+                "priority": 1
+            }
+        )
+        
+        task_data = response.json()
+        task_id = task_data["id"]
+        return task_id
+```
+
+### Example: Checking Task Status
+
+```python
+async def check_task(task_id):
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"http://localhost:8000/tasks/{task_id}")
+        
+        if response.status_code == 200:
+            task_data = response.json()
+            status = task_data["status"]
+            
+            if status == "completed":
+                return task_data["result"]
+            elif status == "failed":
+                raise RuntimeError(f"Task failed: {task_data['error']}")
+            else:
+                return f"Task is {status} ({task_data['progress']*100:.1f}% complete)"
+```
+
+### Security Considerations
+
+The API router does not include authentication or authorization mechanisms. When exposing this API, consider adding security measures appropriate for your application, such as:
+
+- API key authentication
+- JWT-based authentication
+- Role-based access control
+
+You can implement these using FastAPI's dependency system or middleware.
+
+
 ## License
 
 MIT
