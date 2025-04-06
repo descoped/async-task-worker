@@ -2,7 +2,7 @@
 Async Task Worker
 
 This module provides an asynchronous task worker that manages background tasks
-using Python 3.12+ asyncio features.
+using Python asyncio features with support for task result caching.
 """
 
 import asyncio
@@ -14,6 +14,8 @@ from enum import Enum
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Self, TypeVar
 
 from pydantic import BaseModel, Field
+
+from task_worker.task_cache import CacheAdapter, MemoryCacheAdapter, TaskCache
 
 logger = logging.getLogger(__name__)
 
@@ -58,13 +60,18 @@ class AsyncTaskWorker:
     - Task status tracking
     - Task cancellation
     - Progress reporting
+    - Result caching
     """
 
     def __init__(
             self,
             max_workers: int = 10,
             task_timeout: Optional[int] = None,
-            worker_poll_interval: float = 1.0
+            worker_poll_interval: float = 1.0,
+            cache_enabled: bool = False,
+            cache_ttl: Optional[int] = 3600,  # 1 hour default
+            cache_max_size: Optional[int] = 1000,
+            cache_adapter: Optional[CacheAdapter] = None
     ):
         """
         Initialize the task worker.
@@ -73,6 +80,10 @@ class AsyncTaskWorker:
             max_workers: Maximum number of concurrent worker tasks
             task_timeout: Default timeout in seconds for tasks (None for no timeout)
             worker_poll_interval: How frequently workers check for new tasks
+            cache_enabled: Whether task result caching is enabled
+            cache_ttl: Default time-to-live for cached results in seconds (None for no expiry)
+            cache_max_size: Maximum number of entries in the cache (None for unlimited)
+            cache_adapter: Custom cache adapter (default is in-memory)
         """
         self.tasks: Dict[str, TaskInfo] = {}
         self.queue: asyncio.PriorityQueue = asyncio.PriorityQueue()
@@ -90,6 +101,10 @@ class AsyncTaskWorker:
             "progress_callbacks": asyncio.Lock(),
             "completion_events": asyncio.Lock()
         }
+
+        # Set up cache
+        adapter = cache_adapter or MemoryCacheAdapter(max_size=cache_max_size)
+        self.cache = TaskCache(adapter, default_ttl=cache_ttl, enabled=cache_enabled)
 
     async def __aenter__(self) -> Self:
         """Support async context manager protocol"""
@@ -219,6 +234,32 @@ class AsyncTaskWorker:
     ) -> Any:
         """Execute a task with the specified timeout."""
 
+        # Extract cache options from kwargs if present
+        use_cache = task_kwargs.pop("use_cache", True)
+        cache_ttl = task_kwargs.pop("cache_ttl", None)
+
+        # Try to get from cache if caching is enabled
+        if use_cache and self.cache.enabled:
+            func_name = task_func.__name__
+            # Make a copy without progress_callback for cache key
+            cache_kwargs = {k: v for k, v in task_kwargs.items()
+                            if k != "progress_callback"}
+
+            cache_hit, cached_result = await self.cache.get(func_name, task_args, cache_kwargs)
+
+            if cache_hit:
+                logger.info(f"Task {task_id} using cached result")
+
+                # Update task with cached result
+                async with self._locks["tasks"]:
+                    if task_id in self.tasks:  # Guard against race conditions
+                        self.tasks[task_id].status = TaskStatus.COMPLETED
+                        self.tasks[task_id].completed_at = datetime.now()
+                        self.tasks[task_id].result = cached_result
+                        self.tasks[task_id].progress = 1.0
+
+                return cached_result
+
         # Create progress callback
         def update_progress(progress: float) -> None:
             asyncio.create_task(self._update_progress(task_id, progress))
@@ -266,6 +307,17 @@ class AsyncTaskWorker:
                     self.tasks[task_id].progress = 1.0
 
             logger.info(f"Task {task_id} completed successfully")
+
+            # Store in cache if caching is enabled
+            if use_cache and self.cache.enabled:
+                # Get function name and kwargs without progress_callback
+                func_name = task_func.__name__
+                cache_kwargs = {k: v for k, v in task_kwargs.items()
+                                if k != "progress_callback"}
+
+                # Store in cache
+                await self.cache.set(func_name, task_args, cache_kwargs, result, cache_ttl)
+
             return result
 
         except asyncio.CancelledError:
@@ -324,6 +376,8 @@ class AsyncTaskWorker:
             task_id: Optional[str] = None,
             metadata: Optional[Dict[str, Any]] = None,
             timeout: Optional[int] = None,
+            use_cache: bool = True,
+            cache_ttl: Optional[int] = None,
             **kwargs: Any
     ) -> str:
         """
@@ -336,6 +390,8 @@ class AsyncTaskWorker:
             task_id: Optional custom task ID (default: auto-generated UUID)
             metadata: Optional metadata to store with the task
             timeout: Optional per-task timeout override (uses default if None)
+            use_cache: Whether to use cache for this task
+            cache_ttl: Optional cache TTL override
             **kwargs: Keyword arguments to pass to the function
 
         Returns:
@@ -359,6 +415,11 @@ class AsyncTaskWorker:
 
         # Use task-specific timeout or default
         effective_timeout = timeout if timeout is not None else self.default_task_timeout
+
+        # Add cache options to kwargs
+        kwargs["use_cache"] = use_cache
+        if cache_ttl is not None:
+            kwargs["cache_ttl"] = cache_ttl
 
         # Add to queue with priority
         await self.queue.put((priority, task_id, task_func, args, kwargs, effective_timeout))
@@ -459,6 +520,33 @@ class AsyncTaskWorker:
             task_info.error = "Task cancelled before execution"
         logger.info(f"Cancelled pending task {task_id}")
         return True
+
+    async def invalidate_cache(
+            self,
+            task_func: Callable,
+            *args: Any,
+            **kwargs: Any
+    ) -> bool:
+        """
+        Invalidate cache for a specific task function and arguments.
+
+        Args:
+            task_func: The task function
+            *args: Function arguments
+            **kwargs: Function keyword arguments
+
+        Returns:
+            True if cache entry was found and invalidated
+        """
+        if not self.cache.enabled:
+            return False
+
+        return await self.cache.invalidate(task_func.__name__, args, kwargs)
+
+    async def clear_cache(self) -> None:
+        """Clear all cached task results."""
+        if self.cache.enabled:
+            await self.cache.clear()
 
     def get_task_future(self, task_id: str) -> asyncio.Future:
         """

@@ -1,5 +1,5 @@
 [project]
-name = "task-worker"
+name = "async-task-worker"
 version = "0.1.0"
 description = "Async Test Worker"
 authors = [
