@@ -66,9 +66,9 @@ exclude = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/descoped/task-worker"
-Repository = "https://github.com/descoped/task-worker"
-Issues = "https://github.com/descoped/task-worker/issues"
+Homepage = "https://github.com/descoped/async-task-worker"
+Repository = "https://github.com/descoped/async-task-worker"
+Issues = "https://github.com/descoped/async-task-worker/issues"
 
 [[tool.uv.index]]
 name = "pypi"

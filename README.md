@@ -5,7 +5,7 @@ A robust asynchronous task worker system for Python applications with built-in c
 ## Installation
 
 ```bash
-pip install async-task-worker
+pip install async-async-task-worker
 ```
 
 ## Features
@@ -23,11 +23,11 @@ pip install async-task-worker
 
 ## Sequence Diagrams
 
-- [Task Registry Sequence Diagram](https://github.com/descoped/task-worker/blob/master/docs/Task%20Registry%20Sequence%20Diagram.mmd)
-- [AsyncTaskWorker Sequence Diagram](https://github.com/descoped/task-worker/blob/master/docs/AsyncTaskWorker%20Sequence%20Diagram.mmd)
-- [Task Cache Sequence Diagram](https://github.com/descoped/task-worker/blob/master/docs/Task%20Cache%20Sequence%20Diagram.mmd)
-- [Task Worker API Sequence Diagram](https://github.com/descoped/task-worker/blob/master/docs/Task%20Worker%20API%20Sequence%20Diagram.mmd)
-- [AsyncTaskWorker Class Diagram](https://github.com/descoped/task-worker/blob/master/docs/AsyncTaskWorker%20Class%20Diagram.mmd)
+- [Task Registry Sequence Diagram](https://github.com/descoped/async-task-worker/blob/master/docs/Task%20Registry%20Sequence%20Diagram.mmd)
+- [AsyncTaskWorker Sequence Diagram](https://github.com/descoped/async-task-worker/blob/master/docs/AsyncTaskWorker%20Sequence%20Diagram.mmd)
+- [Task Cache Sequence Diagram](https://github.com/descoped/async-task-worker/blob/master/docs/Task%20Cache%20Sequence%20Diagram.mmd)
+- [Task Worker API Sequence Diagram](https://github.com/descoped/async-task-worker/blob/master/docs/Task%20Worker%20API%20Sequence%20Diagram.mmd)
+- [AsyncTaskWorker Class Diagram](https://github.com/descoped/async-task-worker/blob/master/docs/AsyncTaskWorker%20Class%20Diagram.mmd)
 
 
 ## How It Works
@@ -843,8 +843,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ### Build
 
 ```bash
-git clone https://github.com/descoped/task-worker.git
-cd task-worker
+git clone https://github.com/descoped/async-task-worker.git
+cd async-task-worker
 uv venv
 source .venv/bin/activate
 uv sync --all-extras
