@@ -839,3 +839,14 @@ MIT
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+### Build
+
+```bash
+git clone https://github.com/descoped/task-worker.git
+cd task-worker
+uv venv
+source .venv/bin/activate
+uv sync --all-extras
+code .
+```
