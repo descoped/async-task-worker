@@ -1,0 +1,53 @@
+sequenceDiagram
+    participant Client as AsyncTaskWorker or Client
+    participant TaskCache
+    participant CacheAdapter
+    participant MemoryCache as MemoryCacheAdapter
+
+    Note over Client, TaskCache: Cache initialization
+    Client->>TaskCache: init(adapter, default_ttl, enabled)
+    TaskCache->>MemoryCache: init(max_size) (if no custom adapter)
+
+    Note over Client, MemoryCache: Getting cached result
+    Client->>TaskCache: get(func_name, args, kwargs)
+    TaskCache->>TaskCache: generate_key(func_name, args, kwargs)
+    TaskCache->>CacheAdapter: get(key)
+
+    alt Memory cache adapter used
+        CacheAdapter->>MemoryCache: get(key)
+        MemoryCache->>MemoryCache: Update access time
+        MemoryCache->>MemoryCache: Check if expired
+        MemoryCache-->>CacheAdapter: hit, value
+    end
+
+    CacheAdapter-->>TaskCache: hit, value
+    TaskCache-->>Client: hit, value
+
+    Note over Client, MemoryCache: Storing result in cache
+    Client->>TaskCache: set(func_name, args, kwargs, result, ttl)
+    TaskCache->>TaskCache: generate_key(func_name, args, kwargs)
+    TaskCache->>CacheAdapter: set(key, result, effective_ttl)
+
+    alt Memory cache adapter used
+        CacheAdapter->>MemoryCache: set(key, value, ttl)
+        MemoryCache->>MemoryCache: Check if at max capacity
+
+        alt At max capacity
+            MemoryCache->>MemoryCache: _evict_one() (LRU)
+        end
+
+        MemoryCache->>MemoryCache: Store value with expiry time
+    end
+
+    Note over Client, MemoryCache: Invalidating cache
+    Client->>TaskCache: invalidate(func_name, args, kwargs)
+    TaskCache->>TaskCache: generate_key(func_name, args, kwargs)
+    TaskCache->>CacheAdapter: delete(key)
+    CacheAdapter-->>TaskCache: deleted (boolean)
+    TaskCache-->>Client: deleted (boolean)
+
+    Note over Client, MemoryCache: Clearing cache
+    Client->>TaskCache: clear()
+    TaskCache->>CacheAdapter: clear()
+    CacheAdapter-->>TaskCache: done
+    TaskCache-->>Client: done

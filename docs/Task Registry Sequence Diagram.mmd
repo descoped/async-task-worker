@@ -1,0 +1,22 @@
+sequenceDiagram
+    participant Client
+    participant TaskDecorator as @task Decorator
+    participant Registry as Task Registry
+    participant Worker as AsyncTaskWorker
+
+    Client->>TaskDecorator: Apply @task("task_type") to function
+    TaskDecorator->>Registry: register_task("task_type", func)
+    Registry-->>TaskDecorator: Store in _TASK_REGISTRY
+    TaskDecorator-->>Client: Return decorated function
+
+    Note over Client, Worker: Later, when submitting a task
+    Client->>Worker: add_task(...)
+    Worker->>Registry: get_task_function("task_type")
+    Registry-->>Worker: Return registered function
+    Worker-->>Client: Return task_id
+
+    Note over Client, Worker: Alternatively, via API
+    Client->>Worker: submit task via API (TaskSubmitRequest)
+    Worker->>Registry: get_task_function(request.task_type)
+    Registry-->>Worker: Return registered function
+    Worker-->>Client: Return TaskResponse

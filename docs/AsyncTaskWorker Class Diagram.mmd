@@ -1,0 +1,90 @@
+classDiagram
+    class AsyncTaskWorker {
+        +Dict[str, TaskInfo] tasks
+        +asyncio.PriorityQueue queue
+        +int max_workers
+        +Optional[int] default_task_timeout
+        +float worker_poll_interval
+        +List[asyncio.Task] workers
+        +bool running
+        +Dict[str, asyncio.Task] _running_tasks
+        +Dict[str, ProgressCallback] _progress_callbacks
+        +Dict[str, asyncio.Event] _completion_events
+        +Dict[str, asyncio.Lock] _locks
+        +TaskCache cache
+        +__init__(max_workers, task_timeout, worker_poll_interval, cache_enabled, cache_ttl, cache_max_size, cache_adapter)
+        +start() async
+        +stop(timeout) async
+        +add_task(task_func, *args, priority, task_id, metadata, timeout, use_cache, cache_ttl, **kwargs) async
+        +get_task_info(task_id)
+        +get_all_tasks(status, limit, older_than)
+        +cancel_task(task_id) async
+        +invalidate_cache(task_func, *args, **kwargs) async
+        +clear_cache() async
+        +get_task_future(task_id)
+        +get_task_futures(task_ids)
+        -_worker_loop(worker_id) async
+        -_execute_task(task_id, task_func, task_args, task_kwargs, timeout) async
+        -_update_progress(task_id, progress) async
+        -_register_completion_event(task_id, event) async
+        -_wait_for_completion(task_id, future, event) async
+    }
+
+    class TaskInfo {
+        +str id
+        +TaskStatus status
+        +datetime created_at
+        +Optional[datetime] started_at
+        +Optional[datetime] completed_at
+        +Optional[Any] result
+        +Optional[str] error
+        +float progress
+        +Dict[str, Any] metadata
+    }
+
+    class TaskStatus {
+        <<enumeration>>
+        PENDING
+        RUNNING
+        COMPLETED
+        FAILED
+        CANCELLED
+    }
+
+    class TaskCache {
+        +CacheAdapter adapter
+        +Optional[int] default_ttl
+        +bool enabled
+        +__init__(adapter, default_ttl, enabled)
+        +generate_key(func_name, args, kwargs) static
+        +get(func_name, args, kwargs) async
+        +set(func_name, args, kwargs, result, ttl) async
+        +invalidate(func_name, args, kwargs) async
+        +clear() async
+    }
+
+    class CacheAdapter {
+        <<abstract>>
+        +get(key) async abstract
+        +set(key, value, ttl) async abstract
+        +delete(key) async abstract
+        +clear() async abstract
+    }
+
+    class MemoryCacheAdapter {
+        +Dict[str, Tuple] _cache
+        +Dict[str, float] _access_times
+        +Optional[int] max_size
+        +__init__(max_size)
+        +get(key) async
+        +set(key, value, ttl) async
+        +delete(key) async
+        +clear() async
+        -_evict_one()
+    }
+
+    AsyncTaskWorker "1" *-- "many" TaskInfo : contains
+    AsyncTaskWorker "1" *-- "1" TaskCache : uses
+    TaskCache "1" *-- "1" CacheAdapter : uses
+    MemoryCacheAdapter --|> CacheAdapter : implements
+    TaskInfo "1" *-- "1" TaskStatus : has

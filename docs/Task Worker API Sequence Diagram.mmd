@@ -1,0 +1,52 @@
+sequenceDiagram
+    participant Client
+    participant FastAPI
+    participant TaskRouter as Task Worker Router
+    participant Worker as AsyncTaskWorker
+    participant Registry as Task Registry
+
+    Note over Client, Registry: API Initialization
+    FastAPI->>TaskRouter: create_task_worker_router(worker)
+    FastAPI->>FastAPI: app.include_router(task_router)
+
+    Note over Client, Registry: Submit task via API
+    Client->>TaskRouter: POST /tasks (TaskSubmitRequest)
+    TaskRouter->>Registry: get_task_function(request.task_type)
+    Registry-->>TaskRouter: Return task function
+    TaskRouter->>Worker: add_task(task_func, **request.params, ...)
+    Worker-->>TaskRouter: Return task_id
+    TaskRouter->>Worker: get_task_info(task_id)
+    Worker-->>TaskRouter: Return TaskInfo
+    TaskRouter-->>Client: Return TaskResponse
+
+    Note over Client, Registry: Get task status
+    Client->>TaskRouter: GET /tasks/{task_id}
+    TaskRouter->>Worker: get_task_info(task_id)
+    Worker-->>TaskRouter: Return TaskInfo
+    TaskRouter-->>Client: Return TaskResponse
+
+    Note over Client, Registry: Cancel task
+    Client->>TaskRouter: DELETE /tasks/{task_id}
+    TaskRouter->>Worker: get_task_info(task_id)
+    Worker-->>TaskRouter: Return TaskInfo
+    TaskRouter->>Worker: cancel_task(task_id)
+    Worker-->>TaskRouter: cancelled (boolean)
+    TaskRouter-->>Client: No content (204) or error
+
+    Note over Client, Registry: List tasks
+    Client->>TaskRouter: GET /tasks?status=&limit=&older_than_minutes=
+    TaskRouter->>Worker: get_all_tasks(status, limit, older_than)
+    Worker-->>TaskRouter: Return list of TaskInfo
+    TaskRouter-->>Client: Return TaskListResponse
+
+    Note over Client, Registry: Get task types
+    Client->>TaskRouter: GET /types
+    TaskRouter->>Registry: get_all_task_types()
+    Registry-->>TaskRouter: Return list of task types
+    TaskRouter-->>Client: Return TaskTypesResponse
+
+    Note over Client, Registry: Health check
+    Client->>TaskRouter: GET /health
+    TaskRouter->>Worker: Check worker.running and len(worker.workers)
+    Worker-->>TaskRouter: Return status
+    TaskRouter-->>Client: Return HealthResponse

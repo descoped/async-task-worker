@@ -1,0 +1,48 @@
+sequenceDiagram
+    participant Client
+    participant AsyncTaskWorker
+    participant Queue as Priority Queue
+    participant Worker as Worker Task
+    participant TaskCache
+    participant Registry as Task Registry
+
+    Client->>AsyncTaskWorker: start()
+    AsyncTaskWorker->>Worker: Create worker tasks (x max_workers)
+    Worker->>Queue: await queue.get()
+
+    Client->>AsyncTaskWorker: add_task(task_func, *args, **kwargs)
+    AsyncTaskWorker->>AsyncTaskWorker: Create TaskInfo
+    AsyncTaskWorker->>Queue: queue.put((priority, task_id, func, args, kwargs, timeout))
+    AsyncTaskWorker-->>Client: Return task_id
+
+    Note over Worker: Worker picks up task
+    Queue-->>Worker: priority, task_id, func, args, kwargs, timeout
+    Worker->>Worker: Update task status to RUNNING
+
+    Note over Worker, TaskCache: Check for cached result
+    Worker->>TaskCache: cache.get(func_name, args, cache_kwargs)
+
+    alt Cache hit
+        TaskCache-->>Worker: cache_hit = True, cached_result
+        Worker->>AsyncTaskWorker: Update TaskInfo with result
+        Worker-->>Queue: queue.task_done()
+    else Cache miss
+        TaskCache-->>Worker: cache_hit = False, None
+        Worker->>Worker: Execute task with timeout
+
+        alt Task succeeded
+            Worker->>AsyncTaskWorker: Update TaskInfo with result (COMPLETED)
+            Worker->>TaskCache: cache.set(func_name, args, cache_kwargs, result)
+        else Task failed/canceled/timeout
+            Worker->>AsyncTaskWorker: Update TaskInfo with error
+        end
+
+        Worker-->>Queue: queue.task_done()
+    end
+
+    Client->>AsyncTaskWorker: get_task_info(task_id)
+    AsyncTaskWorker-->>Client: Return TaskInfo
+
+    Client->>AsyncTaskWorker: stop()
+    AsyncTaskWorker->>Worker: Cancel all workers
+    AsyncTaskWorker-->>Client: Worker stopped
