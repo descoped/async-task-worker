@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from task_worker import AsyncTaskWorker, create_task_worker_router, task, TaskStatus
+from async_task_worker import AsyncTaskWorker, create_task_worker_router, task, TaskStatus
 
 
 @pytest.fixture

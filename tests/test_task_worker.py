@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from task_worker import AsyncTaskWorker, TaskStatus, task
+from async_task_worker import AsyncTaskWorker, TaskStatus, task
 
 
 # Test tasks with different durations

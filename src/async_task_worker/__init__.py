@@ -3,26 +3,26 @@ Async Task Worker
 A robust asynchronous task worker system for Python applications.
 """
 # Export cache-related classes
-from task_worker.task_cache import (
+from async_task_worker.task_cache import (
     CacheAdapter,
     MemoryCacheAdapter,
     TaskCache,
 )
-from task_worker.task_registry import (
+from async_task_worker.task_registry import (
     task,
     register_task,
     get_task_function,
     get_all_task_types,
 )
 # Export main classes and functions
-from task_worker.task_worker import (
+from async_task_worker.task_worker import (
     AsyncTaskWorker,
     TaskInfo,
     TaskStatus,
     ProgressCallback,
 )
 
-# Define what gets imported with `from task_worker import *`
+# Define what gets imported with `from async_task_worker import *`
 __all__ = [
     'AsyncTaskWorker',
     'TaskInfo',

@@ -1,7 +1,7 @@
 import unittest
 from typing import Awaitable, Callable, Any
 
-from task_worker import (
+from async_task_worker import (
     get_all_task_types,
     get_task_function,
     register_task,
@@ -15,7 +15,7 @@ class TestTaskRegistry(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         # Clear task registry before each test
-        from task_worker.task_registry import _TASK_REGISTRY
+        from async_task_worker.task_registry import _TASK_REGISTRY
         _TASK_REGISTRY.clear()
 
     async def test_task_decorator(self):

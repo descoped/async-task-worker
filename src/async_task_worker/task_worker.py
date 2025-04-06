@@ -15,7 +15,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Self, TypeVar
 
 from pydantic import BaseModel, Field
 
-from task_worker.task_cache import CacheAdapter, MemoryCacheAdapter, TaskCache
+from async_task_worker.task_cache import CacheAdapter, MemoryCacheAdapter, TaskCache
 
 logger = logging.getLogger(__name__)
 

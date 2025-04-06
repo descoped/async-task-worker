@@ -7,8 +7,8 @@ This allows for easy integration into any FastAPI application.
 Example usage:
     from fastapi import FastAPI
     from contextlib import asynccontextmanager
-    from task_worker import AsyncTaskWorker
-    from task_worker.task_worker_api import create_task_worker_router
+    from async_task_worker import AsyncTaskWorker
+    from async_task_worker.task_worker_api import create_task_worker_router
 
     # Create worker
     worker = AsyncTaskWorker()
@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
 
-from task_worker import (
+from async_task_worker import (
     AsyncTaskWorker,
     TaskStatus,
     get_all_task_types,

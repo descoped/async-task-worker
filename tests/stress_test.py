@@ -16,7 +16,7 @@ import random
 import sys
 import time
 
-from task_worker import AsyncTaskWorker, TaskStatus, task
+from async_task_worker import AsyncTaskWorker, TaskStatus, task
 
 
 # Define test tasks with different durations
