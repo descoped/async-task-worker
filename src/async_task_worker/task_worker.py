@@ -71,7 +71,10 @@ class AsyncTaskWorker:
             cache_enabled: bool = False,
             cache_ttl: Optional[int] = 3600,  # 1 hour default
             cache_max_size: Optional[int] = 1000,
-            cache_adapter: Optional[CacheAdapter] = None
+            cache_adapter: Optional[CacheAdapter] = None,
+            max_queue_size: Optional[int] = None,  # New parameter for queue size limit
+            task_retention_days: Optional[int] = 7,  # New parameter for task retention
+            cleanup_interval: int = 3600  # Cleanup every hour by default
     ):
         """
         Initialize the task worker.
@@ -84,13 +87,23 @@ class AsyncTaskWorker:
             cache_ttl: Default time-to-live for cached results in seconds (None for no expiry)
             cache_max_size: Maximum number of entries in the cache (None for unlimited)
             cache_adapter: Custom cache adapter (default is in-memory)
+            max_queue_size: Maximum number of items in the queue (None for unlimited)
+            task_retention_days: Days to keep completed tasks (None for unlimited)
+            cleanup_interval: Seconds between cleanup operations
         """
         self.tasks: Dict[str, TaskInfo] = {}
-        self.queue: asyncio.PriorityQueue = asyncio.PriorityQueue()
+
+        # Create a bounded queue if max_queue_size is specified
+        if max_queue_size is not None:
+            self.queue: asyncio.PriorityQueue = asyncio.PriorityQueue(maxsize=max_queue_size)
+        else:
+            self.queue: asyncio.PriorityQueue = asyncio.PriorityQueue()
+
         self.max_workers = max_workers
         self.default_task_timeout = task_timeout
         self.worker_poll_interval = worker_poll_interval
         self.workers: List[asyncio.Task] = []
+        self.cleanup_task: Optional[asyncio.Task] = None
         self.running = False
         self._running_tasks: Dict[str, asyncio.Task] = {}
         self._progress_callbacks: Dict[str, ProgressCallback] = {}
@@ -101,6 +114,10 @@ class AsyncTaskWorker:
             "progress_callbacks": asyncio.Lock(),
             "completion_events": asyncio.Lock()
         }
+
+        # Task retention configuration
+        self.task_retention_days = task_retention_days
+        self.cleanup_interval = cleanup_interval
 
         # Set up cache
         adapter = cache_adapter or MemoryCacheAdapter(max_size=cache_max_size)
@@ -116,7 +133,7 @@ class AsyncTaskWorker:
         await self.stop()
 
     async def start(self) -> None:
-        """Start the worker pool"""
+        """Start the worker pool and cleanup task"""
         if self.running:
             return
 
@@ -126,6 +143,11 @@ class AsyncTaskWorker:
             worker = asyncio.create_task(self._worker_loop(worker_id=i))
             worker.set_name(f"task_worker_{i}")
             self.workers.append(worker)
+
+        # Start task cleanup if retention period is set
+        if self.task_retention_days is not None:
+            self.cleanup_task = asyncio.create_task(self._cleanup_loop())
+            self.cleanup_task.set_name("task_cleanup")
 
         logger.info(f"Started {self.max_workers} worker tasks")
 
@@ -141,6 +163,14 @@ class AsyncTaskWorker:
 
         self.running = False
         logger.info("Stopping worker pool...")
+
+        # Cancel cleanup task if running
+        if self.cleanup_task and not self.cleanup_task.done():
+            self.cleanup_task.cancel()
+            try:
+                await asyncio.wait_for(self.cleanup_task, timeout=1.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
 
         # Cancel all running tasks
         async with self._locks["running_tasks"]:
@@ -174,10 +204,29 @@ class AsyncTaskWorker:
         logger.info("Worker pool stopped")
 
     async def _update_progress(self, task_id: str, progress: float) -> None:
-        """Update task progress with proper locking"""
+        """
+        Update task progress with proper validation and locking.
+
+        This is an internal method called by the progress_callback function
+        that is passed to tasks.
+
+        Args:
+            task_id: ID of the task to update
+            progress: Progress value between 0.0 and 1.0
+        """
+        # Validate progress value
+        if progress < 0.0:
+            logger.warning(f"Invalid negative progress value {progress} for task {task_id}, setting to 0.0")
+            progress = 0.0
+        elif progress > 1.0:
+            logger.warning(f"Invalid progress value > 1.0 ({progress}) for task {task_id}, capping at 1.0")
+            progress = 1.0
+
         async with self._locks["tasks"]:
             if task_id in self.tasks:
                 self.tasks[task_id].progress = progress
+            else:
+                logger.warning(f"Attempted to update progress for non-existent task {task_id}")
 
     async def _worker_loop(self, worker_id: int) -> None:
         """Main worker loop that processes tasks from the queue."""
@@ -234,31 +283,50 @@ class AsyncTaskWorker:
     ) -> Any:
         """Execute a task with the specified timeout."""
 
+        # Ensure task_func is a coroutine function
+        if not inspect.iscoroutinefunction(task_func):
+            error_msg = f"Task {task_id}: Function {task_func.__name__} is not a coroutine function"
+            logger.error(error_msg)
+
+            # Update task with failure
+            async with self._locks["tasks"]:
+                if task_id in self.tasks:
+                    self.tasks[task_id].status = TaskStatus.FAILED
+                    self.tasks[task_id].completed_at = datetime.now()
+                    self.tasks[task_id].error = error_msg
+                    self.tasks[task_id].progress = 0.0
+
+            raise TypeError(error_msg)
+
         # Extract cache options from kwargs if present
         use_cache = task_kwargs.pop("use_cache", True)
         cache_ttl = task_kwargs.pop("cache_ttl", None)
 
         # Try to get from cache if caching is enabled
         if use_cache and self.cache.enabled:
-            func_name = task_func.__name__
-            # Make a copy without progress_callback for cache key
-            cache_kwargs = {k: v for k, v in task_kwargs.items()
-                            if k != "progress_callback"}
+            try:
+                func_name = task_func.__name__
+                # Make a copy without progress_callback for cache key
+                cache_kwargs = {k: v for k, v in task_kwargs.items()
+                                if k != "progress_callback"}
 
-            cache_hit, cached_result = await self.cache.get(func_name, task_args, cache_kwargs)
+                cache_hit, cached_result = await self.cache.get(func_name, task_args, cache_kwargs)
 
-            if cache_hit:
-                logger.info(f"Task {task_id} using cached result")
+                if cache_hit:
+                    logger.info(f"Task {task_id} using cached result")
 
-                # Update task with cached result
-                async with self._locks["tasks"]:
-                    if task_id in self.tasks:  # Guard against race conditions
-                        self.tasks[task_id].status = TaskStatus.COMPLETED
-                        self.tasks[task_id].completed_at = datetime.now()
-                        self.tasks[task_id].result = cached_result
-                        self.tasks[task_id].progress = 1.0
+                    # Update task with cached result
+                    async with self._locks["tasks"]:
+                        if task_id in self.tasks:  # Guard against race conditions
+                            self.tasks[task_id].status = TaskStatus.COMPLETED
+                            self.tasks[task_id].completed_at = datetime.now()
+                            self.tasks[task_id].result = cached_result
+                            self.tasks[task_id].progress = 1.0
 
-                return cached_result
+                    return cached_result
+            except Exception as e:
+                logger.error(f"Cache retrieval error for task {task_id}: {str(e)}")
+                # Continue execution without cache by falling through to the regular execution path below
 
         # Create progress callback
         def update_progress(progress: float) -> None:
@@ -277,9 +345,9 @@ class AsyncTaskWorker:
             # Only add if the function can accept it
             if has_progress_param or has_kwargs:
                 task_kwargs_copy["progress_callback"] = update_progress
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Could not inspect function signature for {task_func.__name__}: {str(e)}")
             # If we can't inspect the function, don't add the callback
-            pass
 
         # Create the task coroutine
         task_coroutine = task_func(*task_args, **task_kwargs_copy)
@@ -440,7 +508,7 @@ class AsyncTaskWorker:
         # No need for lock here as we're just reading
         return self.tasks.get(task_id)
 
-    def get_all_tasks(
+    async def get_all_tasks(
             self,
             status: Optional[TaskStatus] = None,
             limit: Optional[int] = None,
@@ -448,6 +516,8 @@ class AsyncTaskWorker:
     ) -> List[TaskInfo]:
         """
         Get information about tasks, with optional filtering.
+
+        Optimized to filter during iteration instead of copying the whole dictionary.
 
         Args:
             status: Filter by task status
@@ -457,26 +527,29 @@ class AsyncTaskWorker:
         Returns:
             List of TaskInfo objects
         """
-        # Make a copy of tasks to avoid mutation during iteration
-        tasks = list(self.tasks.values())
+        results = []
+        cutoff = datetime.now() - older_than if older_than else None
 
-        # Apply status filter
-        if status is not None:
-            tasks = [t for t in tasks if t.status == status]
+        # Lock to prevent modifications during iteration
+        async with self._locks["tasks"]:
+            for task_info in self.tasks.values():
+                # Apply filters
+                if status is not None and task_info.status != status:
+                    continue
+                if cutoff is not None and task_info.created_at >= cutoff:
+                    continue
 
-        # Apply age filter
-        if older_than is not None:
-            cutoff = datetime.now() - older_than
-            tasks = [t for t in tasks if t.created_at < cutoff]
+                # Add to results
+                results.append(task_info)
+
+                # Check limit
+                if limit is not None and len(results) >= limit:
+                    break
 
         # Sort by creation time (newest first)
-        tasks.sort(key=lambda t: t.created_at, reverse=True)
+        results.sort(key=lambda t: t.created_at, reverse=True)
 
-        # Apply limit
-        if limit is not None:
-            tasks = tasks[:limit]
-
-        return tasks
+        return results
 
     async def cancel_task(self, task_id: str) -> bool:
         """
@@ -547,6 +620,54 @@ class AsyncTaskWorker:
         """Clear all cached task results."""
         if self.cache.enabled:
             await self.cache.clear()
+
+    async def _cleanup_loop(self) -> None:
+        """Periodically clean up old completed tasks"""
+        logger.debug("Task cleanup loop started")
+
+        while self.running:
+            try:
+                await asyncio.sleep(self.cleanup_interval)
+                await self.cleanup_old_tasks()
+            except asyncio.CancelledError:
+                logger.debug("Task cleanup loop cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in task cleanup loop: {str(e)}", exc_info=True)
+
+        logger.debug("Task cleanup loop stopped")
+
+    async def cleanup_old_tasks(self) -> int:
+        """
+        Remove old completed, failed, or cancelled tasks.
+
+        Returns:
+            Number of tasks removed
+        """
+        if self.task_retention_days is None:
+            return 0
+
+        cutoff_time = datetime.now() - timedelta(days=self.task_retention_days)
+        to_remove = []
+
+        # First identify tasks to remove
+        async with self._locks["tasks"]:
+            for task_id, task_info in self.tasks.items():
+                # Only remove tasks that are in a final state
+                if task_info.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
+                    # Check if the task is old enough to be removed
+                    if task_info.completed_at and task_info.completed_at < cutoff_time:
+                        to_remove.append(task_id)
+
+        # Then remove them in a separate loop to avoid modifying during iteration
+        if to_remove:
+            async with self._locks["tasks"]:
+                for task_id in to_remove:
+                    del self.tasks[task_id]
+
+            logger.info(f"Cleaned up {len(to_remove)} old tasks")
+
+        return len(to_remove)
 
     def get_task_future(self, task_id: str) -> asyncio.Future:
         """

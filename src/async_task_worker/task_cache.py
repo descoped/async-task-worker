@@ -182,22 +182,30 @@ class TaskCache:
         Returns:
             Cache key string
         """
-        # Serialize arguments
+        # Try JSON serialization first (most efficient)
         try:
-            # Try JSON first for better readability and performance
             key_parts = [func_name, json.dumps(args), json.dumps(kwargs, sort_keys=True)]
             key_string = ":".join(key_parts)
-        except (TypeError, ValueError):
-            # Fall back to pickle for non-JSON-serializable objects
-            try:
-                pickled = pickle.dumps((args, kwargs))
-                key_string = f"{func_name}:{hashlib.md5(pickled).hexdigest()}"
-            except Exception:
-                # Last resort - use string representation
-                key_string = f"{func_name}:{str(args)}:{str(sorted(kwargs.items()))}"
+            return hashlib.md5(key_string.encode()).hexdigest()
+        except (TypeError, ValueError) as e:
+            logger.debug(f"JSON serialization failed for cache key: {e}")
 
-        # Create a hash for the final key
-        return hashlib.md5(key_string.encode()).hexdigest()
+        # Try pickle serialization if JSON fails
+        try:
+            pickled = pickle.dumps((args, kwargs))
+            key_string = f"{func_name}:{hashlib.md5(pickled).hexdigest()}"
+            return hashlib.md5(key_string.encode()).hexdigest()
+        except Exception as e:
+            logger.warning(f"Pickle serialization failed for cache key: {e}")
+
+        # Last resort - use string representation
+        try:
+            key_string = f"{func_name}:{str(args)}:{str(sorted(kwargs.items()))}"
+            return hashlib.md5(key_string.encode()).hexdigest()
+        except Exception as e:
+            logger.error(f"Failed to generate cache key: {e}")
+            # Generate a unique key that won't match anything else
+            return hashlib.md5(f"{func_name}:{uuid.uuid4()}".encode()).hexdigest()
 
     async def get(self, func_name: str, args: tuple, kwargs: dict) -> Tuple[bool, Any]:
         """

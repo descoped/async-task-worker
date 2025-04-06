@@ -266,7 +266,7 @@ async def test_get_all_tasks(worker):
     await asyncio.sleep(0.5)
 
     # Get all completed tasks
-    completed_tasks = worker.get_all_tasks(status=TaskStatus.COMPLETED)
+    completed_tasks = await worker.get_all_tasks(status=TaskStatus.COMPLETED)
     assert len(completed_tasks) == 5
 
     # Add a failing task
@@ -280,7 +280,7 @@ async def test_get_all_tasks(worker):
     await asyncio.sleep(0.2)
 
     # Get failed tasks
-    failed_tasks = worker.get_all_tasks(status=TaskStatus.FAILED)
+    failed_tasks = await worker.get_all_tasks(status=TaskStatus.FAILED)
     assert len(failed_tasks) == 1
     assert failed_tasks[0].id == fail_id
 
