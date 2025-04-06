@@ -7,7 +7,7 @@ authors = [
 ]
 requires-python = ">=3.11"
 readme = "README.md"
-keywords = ["asyncio", "worker", "task", "processor"]
+keywords = ["asyncio", "worker", "task", "processor", "cache"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
