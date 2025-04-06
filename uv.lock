@@ -26,7 +26,7 @@ wheels = [
 ]
 
 [[package]]
-name = "async-async-task-worker"
+name = "async-task-worker"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
