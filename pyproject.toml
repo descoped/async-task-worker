@@ -51,18 +51,18 @@ include = ["src"]
 
 [tool.hatch.build]
 exclude = [
-  "docs/*",
-  "examples/*",
-  "tests/*",
-  ".github/*",
-  "*.gif",
-  "*.png",
-  "dist/*",
-  "build/*",
-  ".pytest_cache",
-  ".ruff_cache",
-  "__pycache__",
-  "*.pyc"
+    "docs/*",
+    "examples/*",
+    "tests/*",
+    ".github/*",
+    "*.gif",
+    "*.png",
+    "dist/*",
+    "build/*",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "*.pyc"
 ]
 
 [project.urls]

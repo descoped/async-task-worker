@@ -1,5 +1,5 @@
 import unittest
-from typing import Awaitable, Callable, Any
+from typing import Any
 
 from async_task_worker import (
     get_all_task_types,

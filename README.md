@@ -847,6 +847,6 @@ git clone https://github.com/descoped/async-task-worker.git
 cd async-task-worker
 uv venv
 source .venv/bin/activate
-uv sync --all-extras
+uv sync --all-groups
 code .
 ```
