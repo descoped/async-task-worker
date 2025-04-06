@@ -26,18 +26,6 @@ Example usage:
     # Create and include the router
     task_router = create_task_worker_router(worker)
     app.include_router(task_router)
-
-    # Define application lifespan
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        # Start the worker when the application starts
-        await worker.start()
-        yield
-        # Stop the worker when the application shuts down
-        await worker.stop()
-
-    # Create FastAPI app with lifespan
-    app = FastAPI(lifespan=lifespan)
 """
 
 import logging
@@ -121,19 +109,27 @@ def create_task_worker_router(
     """
     if tags is None:
         tags = ["tasks"]
-    """
-    Create a FastAPI router for the AsyncTaskWorker.
-    
-    Args:
-        worker: The AsyncTaskWorker instance to use for task management
-        prefix: Optional URL prefix for all routes (e.g., "/api/v1")
-        tags: List of tags for API documentation
-        
-    Returns:
-        A configured FastAPI router
-    """
+
     router = APIRouter(prefix=prefix, tags=tags)
 
+    # First define endpoints that could conflict with parameterized routes
+    # Define the task types endpoint first to avoid path conflicts
+    @router.get("/types", response_model=TaskTypesResponse)
+    async def get_task_types() -> TaskTypesResponse:
+        """Get a list of all registered task types"""
+        task_types = get_all_task_types()
+        return TaskTypesResponse(task_types=task_types)
+
+    # Health check endpoint
+    @router.get("/health", response_model=HealthResponse)
+    async def health_check() -> HealthResponse:
+        """Check the health of the task worker service"""
+        return HealthResponse(
+            status="ok" if worker.running else "stopped",
+            worker_count=len(worker.workers),
+        )
+
+    # Now define the tasks endpoints
     @router.post("/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
     async def create_task(request: TaskSubmitRequest) -> TaskResponse:
         """Submit a new task for processing"""
@@ -247,20 +243,6 @@ def create_task_worker_router(
                 for task in tasks
             ],
             count=len(tasks),
-        )
-
-    @router.get("/tasks/types", response_model=TaskTypesResponse)
-    async def get_task_types() -> TaskTypesResponse:
-        """Get a list of all registered task types"""
-        task_types = get_all_task_types()
-        return TaskTypesResponse(task_types=task_types)
-
-    @router.get("/health", response_model=HealthResponse)
-    async def health_check() -> HealthResponse:
-        """Check the health of the task worker service"""
-        return HealthResponse(
-            status="ok" if worker.running else "stopped",
-            worker_count=len(worker.workers),
         )
 
     return router

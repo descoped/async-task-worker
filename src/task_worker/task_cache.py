@@ -169,7 +169,8 @@ class TaskCache:
         self.default_ttl = default_ttl
         self.enabled = enabled
 
-    def generate_key(self, func_name: str, args: tuple, kwargs: dict) -> str:
+    @staticmethod
+    def generate_key(func_name: str, args: tuple, kwargs: dict) -> str:
         """
         Generate a cache key from function name and arguments.
 

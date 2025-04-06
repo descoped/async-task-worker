@@ -17,12 +17,15 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "fastapi>=0.115.12",
     "pydantic>=2.11.2",
 ]
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
+    "fastapi>=0.115.12",
+]
+test = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.25.0",
 ]
