@@ -1,6 +1,6 @@
 [project]
 name = "async-task-worker"
-version = "0.1.1"
+version = "0.1.2"
 description = "Async Test Worker"
 authors = [
     { name = "Ove Ranheim", email = "oranheim@gmail.com" }
