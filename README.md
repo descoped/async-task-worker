@@ -5,7 +5,7 @@ A robust asynchronous task worker system for Python applications with built-in c
 ## Installation
 
 ```bash
-pip install async-async-task-worker
+pip install async-task-worker
 ```
 
 ## Features
