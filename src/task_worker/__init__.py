@@ -21,6 +21,8 @@ from task_worker.task_worker import (
     TaskStatus,
     ProgressCallback,
 )
+# Export API router factory
+from task_worker.task_worker_api import create_task_worker_router
 
 # Define what gets imported with `from task_worker import *`
 __all__ = [
@@ -35,4 +37,5 @@ __all__ = [
     'CacheAdapter',
     'MemoryCacheAdapter',
     'TaskCache',
+    'create_task_worker_router',
 ]

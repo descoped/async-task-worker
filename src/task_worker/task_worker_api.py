@@ -6,24 +6,38 @@ This allows for easy integration into any FastAPI application.
 
 Example usage:
     from fastapi import FastAPI
+    from contextlib import asynccontextmanager
     from task_worker import AsyncTaskWorker
     from task_worker.task_worker_api import create_task_worker_router
 
-    app = FastAPI()
+    # Create worker
     worker = AsyncTaskWorker()
+
+    # Define application lifespan
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        await worker.start()
+        yield
+        await worker.stop()
+
+    # Create FastAPI app with lifespan
+    app = FastAPI(lifespan=lifespan)
 
     # Create and include the router
     task_router = create_task_worker_router(worker)
     app.include_router(task_router)
 
-    # Start the worker when the application starts
-    @app.on_event("startup")
-    async def startup_event():
+    # Define application lifespan
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Start the worker when the application starts
         await worker.start()
-
-    @app.on_event("shutdown")
-    async def shutdown_event():
+        yield
+        # Stop the worker when the application shuts down
         await worker.stop()
+
+    # Create FastAPI app with lifespan
+    app = FastAPI(lifespan=lifespan)
 """
 
 import logging
@@ -92,7 +106,7 @@ class HealthResponse(BaseModel):
 def create_task_worker_router(
         worker: AsyncTaskWorker,
         prefix: str = "",
-        tags: List[str] = ["tasks"]
+        tags: Optional[List[str]] = None
 ) -> APIRouter:
     """
     Create a FastAPI router for the AsyncTaskWorker.
@@ -100,8 +114,21 @@ def create_task_worker_router(
     Args:
         worker: The AsyncTaskWorker instance to use for task management
         prefix: Optional URL prefix for all routes (e.g., "/api/v1")
-        tags: List of tags for API documentation
+        tags: List of tags for API documentation (defaults to ["tasks"])
 
+    Returns:
+        A configured FastAPI router
+    """
+    if tags is None:
+        tags = ["tasks"]
+    """
+    Create a FastAPI router for the AsyncTaskWorker.
+    
+    Args:
+        worker: The AsyncTaskWorker instance to use for task management
+        prefix: Optional URL prefix for all routes (e.g., "/api/v1")
+        tags: List of tags for API documentation
+        
     Returns:
         A configured FastAPI router
     """

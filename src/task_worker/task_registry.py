@@ -7,7 +7,7 @@ This module provides a task registration system with manual registration.
 import inspect
 import logging
 from functools import wraps
-from typing import Any, Awaitable, Callable, Dict, List, Optional, TypeVar
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
