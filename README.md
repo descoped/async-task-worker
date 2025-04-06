@@ -21,6 +21,15 @@ pip install async-task-worker
 - **Status Tracking**: Monitor task status, progress, and results
 - **Task Registry**: Register task handlers by type
 
+## Sequence Diagrams
+
+- [Task Registry Sequence Diagram](https://github.com/descoped/task-worker/blob/master/docs/Task%20Registry%20Sequence%20Diagram.mmd)
+- [AsyncTaskWorker Sequence Diagram](https://github.com/descoped/task-worker/blob/master/docs/AsyncTaskWorker%20Sequence%20Diagram.mmd)
+- [Task Cache Sequence Diagram](https://github.com/descoped/task-worker/blob/master/docs/Task%20Cache%20Sequence%20Diagram.mmd)
+- [Task Worker API Sequence Diagram](https://github.com/descoped/task-worker/blob/master/docs/Task%20Worker%20API%20Sequence%20Diagram.mmd)
+- [AsyncTaskWorker Class Diagram](https://github.com/descoped/task-worker/blob/master/docs/AsyncTaskWorker%20Class%20Diagram.mmd)
+
+
 ## How It Works
 
 ### Task Worker
