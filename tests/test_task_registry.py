@@ -1,3 +1,4 @@
+# file: tests/test_task_registry.py
 import unittest
 from typing import Any
 
@@ -9,7 +10,6 @@ from async_task_worker import (
 )
 
 
-# Test task_registry.py
 class TestTaskRegistry(unittest.IsolatedAsyncioTestCase):
     """Test the task registry functionality."""
 
@@ -25,8 +25,8 @@ class TestTaskRegistry(unittest.IsolatedAsyncioTestCase):
         async def test_func(x, y):
             return x + y
 
-        # Verify task was registered
-        self.assertIsNotNone(get_task_function("test_task"))
+        # Verify task was registered (await the async call)
+        self.assertIsNotNone(await get_task_function("test_task"))
 
         # Verify function still works
         result = await test_func(5, 7)
@@ -40,15 +40,15 @@ class TestTaskRegistry(unittest.IsolatedAsyncioTestCase):
 
         register_task("multiply", another_task)
 
-        # Verify task was registered
-        task_func = get_task_function("multiply")
+        # Verify task was registered (await the async call)
+        task_func = await get_task_function("multiply")
         self.assertIsNotNone(task_func)
 
         # Verify function reference is correct
         result = await task_func(2, 3, 4)
         self.assertEqual(result, 24)
 
-    def test_get_all_task_types(self):
+    async def test_get_all_task_types(self):
         """Test retrieving all registered task types."""
 
         # Register some test tasks
@@ -60,8 +60,8 @@ class TestTaskRegistry(unittest.IsolatedAsyncioTestCase):
         async def task2():
             pass
 
-        # Get all task types
-        task_types = get_all_task_types()
+        # Get all task types (await the async call)
+        task_types = await get_all_task_types()
 
         # Verify both tasks are registered
         self.assertIn("task1", task_types)
@@ -72,8 +72,7 @@ class TestTaskRegistry(unittest.IsolatedAsyncioTestCase):
         """Test that registering a non-async function raises TypeError."""
 
         # Define the function with proper type annotation to make static type checkers happy
-        # but it's still a sync function that will be caught at runtime
-        def sync_func() -> Any:  # Using Any instead of specific return type to avoid type checking errors
+        def sync_func() -> Any:
             return "not async"
 
         # This should still raise TypeError at runtime despite the return annotation
@@ -82,7 +81,6 @@ class TestTaskRegistry(unittest.IsolatedAsyncioTestCase):
 
     def test_task_decorator_with_non_async(self):
         """Test that task decorator raises TypeError when applied to a non-async function."""
-
         with self.assertRaises(TypeError):
             @task("invalid_task")  # type: ignore
             def not_async_func(x):

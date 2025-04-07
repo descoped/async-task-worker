@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
 from fastapi import FastAPI
@@ -26,6 +26,12 @@ async def test_app():
     # (since we're mocking methods anyway)
     worker.running = True
     worker.workers = [MagicMock() for _ in range(3)]
+    
+    # Mock queue with qsize as a property (for test)
+    mock_queue = MagicMock()
+    # Set qsize as a property, not a method
+    type(mock_queue).qsize = PropertyMock(return_value=5)
+    worker.queue = mock_queue
 
     # Return TestClient and worker
     return TestClient(app), worker
@@ -62,7 +68,7 @@ async def test_create_task(test_app):
 
     # Mock the add_task method
     worker.add_task = AsyncMock(return_value="test-task-id")
-    worker.get_task_info = MagicMock(return_value=MagicMock(
+    worker.get_task_info = AsyncMock(return_value=MagicMock(
         id="test-task-id",
         status=TaskStatus.PENDING,
         progress=0.0,
@@ -118,7 +124,7 @@ async def test_get_task(test_app):
         result=12,
         error=None
     )
-    worker.get_task_info = MagicMock(return_value=task_info)
+    worker.get_task_info = AsyncMock(return_value=task_info)
 
     # Get task
     response = client.get("/api/v1/tasks/test-task-id")
@@ -136,7 +142,7 @@ async def test_get_nonexistent_task(test_app):
     client, worker = test_app
 
     # Mock get_task_info to return None
-    worker.get_task_info = MagicMock(return_value=None)
+    worker.get_task_info = AsyncMock(return_value=None)
 
     # Get nonexistent task
     response = client.get("/api/v1/tasks/nonexistent-id")
@@ -154,7 +160,7 @@ async def test_cancel_task(test_app):
         id="test-task-id",
         status=TaskStatus.RUNNING
     )
-    worker.get_task_info = MagicMock(return_value=task_info)
+    worker.get_task_info = AsyncMock(return_value=task_info)
     worker.cancel_task = AsyncMock(return_value=True)
 
     # Cancel task
@@ -169,14 +175,15 @@ async def test_list_tasks(test_app):
     """Test the GET /tasks endpoint."""
     client, worker = test_app
 
-    # Mock get_all_tasks method
+    # Create dummy task info objects with a "created_at" attribute for sorting.
     task1 = MagicMock(
         id="task-1",
         status=TaskStatus.COMPLETED,
         progress=1.0,
         metadata={"task_type": "test_addition"},
         result=12,
-        error=None
+        error=None,
+        created_at=0  # dummy value
     )
     task2 = MagicMock(
         id="task-2",
@@ -184,9 +191,11 @@ async def test_list_tasks(test_app):
         progress=0.5,
         metadata={"task_type": "test_addition"},
         result=None,
-        error=None
+        error=None,
+        created_at=0  # dummy value
     )
-    worker.get_all_tasks = MagicMock(return_value=[task1, task2])
+    # Use AsyncMock for get_all_tasks so it can be awaited.
+    worker.get_all_tasks = AsyncMock(return_value=[task1, task2])
 
     # List all tasks
     response = client.get("/api/v1/tasks")
@@ -198,9 +207,8 @@ async def test_list_tasks(test_app):
     assert data["tasks"][0]["id"] == "task-1"
     assert data["tasks"][1]["id"] == "task-2"
 
-    # Test with status filter - adding assertions for the response
-    worker.get_all_tasks = MagicMock(return_value=[task2])  # Only return running task
-
+    # Test with status filter - only return running task
+    worker.get_all_tasks = AsyncMock(return_value=[task2])
     response = client.get("/api/v1/tasks?task_status=running")
 
     # Assert that get_all_tasks was called with the right parameters

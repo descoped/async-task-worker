@@ -20,6 +20,8 @@ pip install async-task-worker
 - **Concurrent Task Processing**: Run multiple asynchronous tasks concurrently
 - **Status Tracking**: Monitor task status, progress, and results
 - **Task Registry**: Register task handlers by type
+- **Worker Pool Architecture**: Decoupled worker pool implementation for improved flexibility
+- **API Integration**: Ready-to-use FastAPI router for task management
 
 ## Sequence Diagrams
 
@@ -32,14 +34,25 @@ pip install async-task-worker
 
 ## How It Works
 
-### Task Worker
+### Task Worker Architecture
 
-The `AsyncTaskWorker` manages a pool of worker coroutines that process tasks from a priority queue:
+The system follows a modular, decoupled design:
 
-1. When you add a task, it's placed in a priority queue
-2. Worker coroutines pick tasks from the queue based on priority
-3. The worker executes the task function and captures results or errors
-4. Task status and progress are tracked in a `TaskInfo` object
+1. **AsyncTaskWorker**: Main coordinator that integrates all components
+2. **WorkerPool**: Handles worker lifecycle and task execution processing
+3. **TaskQueue**: Manages prioritized task queuing and retrieval
+4. **TaskExecutor**: Executes individual tasks with timeout and caching
+5. **TaskRegistry**: Provides a global registry for task handlers
+6. **TaskCache**: Implements optional result caching
+
+The workflow proceeds as follows:
+
+1. When you add a task via `AsyncTaskWorker.add_task()`, it's placed in a priority queue
+2. Worker coroutines from the `WorkerPool` pick tasks from the queue based on priority
+3. The `TaskExecutor` executes the task function and captures results or errors
+4. Task status and progress are tracked in a `TaskInfo` object maintained by the `AsyncTaskWorker`
+5. Progress updates can be reported back via callbacks
+6. Results can optionally be cached for future reuse
 
 ```python
 import asyncio
@@ -720,6 +733,16 @@ print(f"Task failed: {info.error}")  # "Value cannot be negative"
 - `get_task_info(task_id)`: Get information about a task
 - `get_all_tasks(status=None, limit=None, older_than=None)`: Get filtered list of tasks
 - `cancel_task(task_id)`: Cancel a running or pending task
+- `get_task_future(task_id)`: Get a future that resolves when the task completes
+- `wait_for_tasks(task_ids, timeout=None)`: Wait for multiple tasks to complete
+- `wait_for_any_task(task_ids, timeout=None)`: Wait for any of the specified tasks to complete
+
+### WorkerPool
+
+- `__init__(task_queue, task_executor, max_workers=10)`: Initialize the worker pool
+- `start()`: Start the worker pool
+- `stop(timeout=5.0)`: Stop the worker pool gracefully
+- `cancel_running_task(task_id)`: Cancel a task that is currently running in a worker
 
 ### Task Registry
 
@@ -727,6 +750,10 @@ print(f"Task failed: {info.error}")  # "Value cannot be negative"
 - `register_task(task_type, task_func)`: Manually register a task function
 - `get_task_function(task_type)`: Get the function for a task type
 - `get_all_task_types()`: Get all registered task types
+
+### API Router
+
+- `create_task_worker_router(worker, prefix="", tags=None)`: Create a FastAPI router for task management
 
 ## API Router - Control API for Task Worker (optional)
 
@@ -743,7 +770,7 @@ pip install fastapi
 ```python
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from async_task_worker.task_worker_api import AsyncTaskWorker, create_task_worker_router
+from async_task_worker import AsyncTaskWorker, create_task_worker_router
 
 # Create task worker
 worker = AsyncTaskWorker(max_workers=10, cache_enabled=True)

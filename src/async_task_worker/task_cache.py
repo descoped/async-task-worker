@@ -2,18 +2,21 @@
 Task Cache System
 
 This module provides caching functionality for the AsyncTaskWorker
-to store and retrieve task results.
+with improved serialization support.
 """
 
 import hashlib
-import json
 import logging
-import pickle
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+class SerializationError(Exception):
+    """Exception raised when serialization fails."""
+    pass
 
 
 class CacheAdapter(ABC):
@@ -145,17 +148,241 @@ class MemoryCacheAdapter(CacheAdapter):
         logger.debug(f"Evicted cache item: {oldest_key}")
 
 
+import datetime
+import msgpack
+import types
+import uuid
+from typing import Any
+
+
+class MsgPackSerializer:
+    """Handler for msgpack serialization and deserialization with custom type support."""
+
+    # Type codes for custom types
+    TYPE_DATETIME = 1
+    TYPE_CUSTOM_OBJECT = 2
+    TYPE_UUID = 3
+    TYPE_STRING_FALLBACK = 99  # Special code for string fallback representations
+
+    @staticmethod
+    def encode(obj: Any, fallback: bool = False) -> bytes:
+        """
+        Serialize an object to bytes using msgpack.
+
+        Args:
+            obj: The object to serialize
+            fallback: Whether to fallback to string representation for unsupported types
+                      IMPORTANT: If True, may not roundtrip correctly
+
+        Returns:
+            Serialized bytes
+
+        Raises:
+            SerializationError: If serialization fails and fallback is False
+        """
+        try:
+            return msgpack.packb(
+                obj,
+                default=lambda o: MsgPackSerializer._encode_hook(o, fallback),
+                use_bin_type=True
+            )
+        except Exception as e:
+            raise SerializationError(f"Failed to serialize object: {str(e)}")
+
+    @staticmethod
+    def decode(data: bytes) -> Any:
+        """
+        Deserialize bytes back to an object.
+
+        Args:
+            data: The serialized data
+
+        Returns:
+            Deserialized object
+
+        Raises:
+            SerializationError: If deserialization fails
+        """
+        try:
+            return msgpack.unpackb(data, object_hook=MsgPackSerializer._decode_hook, raw=False)
+        except Exception as e:
+            raise SerializationError(f"Failed to deserialize data: {str(e)}")
+
+    @staticmethod
+    def _encode_hook(obj: Any, fallback: bool = False) -> Any:
+        """
+        Custom encoder for handling Python types not natively supported by msgpack.
+        
+        Note: When fallback is True, objects that can't be properly serialized
+        will be converted to a special string representation format that includes
+        the original type. These won't roundtrip to their original type.
+        """
+        # Handle datetime objects - fully supported for roundtrip
+        if isinstance(obj, datetime.datetime):
+            return {
+                "__type_code": MsgPackSerializer.TYPE_DATETIME,
+                "data": obj.isoformat()
+            }
+
+        # Handle UUID objects - fully supported for roundtrip
+        if isinstance(obj, uuid.UUID):
+            return {
+                "__type_code": MsgPackSerializer.TYPE_UUID,
+                "data": str(obj)
+            }
+
+        # Explicitly handle functions (including lambdas)
+        if isinstance(obj, types.FunctionType):
+            if fallback:
+                return {
+                    "__type_code": MsgPackSerializer.TYPE_STRING_FALLBACK,
+                    "type": type(obj).__name__,
+                    "data": str(obj)
+                }
+            else:
+                raise SerializationError(f"Functions of type {type(obj).__name__} are not serializable")
+
+        # Handle objects with __dict__
+        if hasattr(obj, "__dict__"):
+            try:
+                # Ensure the __dict__ is serializable
+                serializable_dict = {}
+                for key, value in obj.__dict__.items():
+                    try:
+                        # Test each value for serializability
+                        msgpack.packb(
+                            value,
+                            default=lambda o: MsgPackSerializer._encode_hook(o, fallback=False),
+                            use_bin_type=True
+                        )
+                        serializable_dict[key] = value
+                    except Exception:
+                        if fallback:
+                            # If value can't be serialized, use string representation with type info
+                            serializable_dict[key] = {
+                                "__type_code": MsgPackSerializer.TYPE_STRING_FALLBACK,
+                                "type": type(value).__name__,
+                                "data": str(value)
+                            }
+                        else:
+                            # Without fallback, propagate the exception
+                            raise
+
+                return {
+                    "__type_code": MsgPackSerializer.TYPE_CUSTOM_OBJECT,
+                    "type": obj.__class__.__name__,
+                    "module": obj.__class__.__module__,
+                    "data": serializable_dict
+                }
+            except Exception as e:
+                if fallback:
+                    return {
+                        "__type_code": MsgPackSerializer.TYPE_STRING_FALLBACK,
+                        "type": type(obj).__name__,
+                        "data": str(obj)
+                    }
+                raise SerializationError(f"Object of type {type(obj).__name__} is not serializable: {str(e)}")
+
+        # Handle objects with __slots__
+        if hasattr(obj, "__slots__"):
+            try:
+                slot_dict = {}
+                for slot in obj.__slots__:
+                    if hasattr(obj, slot):
+                        value = getattr(obj, slot)
+                        try:
+                            # Test each value for serializability
+                            msgpack.packb(
+                                value,
+                                default=lambda o: MsgPackSerializer._encode_hook(o, fallback=False),
+                                use_bin_type=True
+                            )
+                            slot_dict[slot] = value
+                        except Exception:
+                            if fallback:
+                                # If value can't be serialized, use string representation with type info
+                                slot_dict[slot] = {
+                                    "__type_code": MsgPackSerializer.TYPE_STRING_FALLBACK,
+                                    "type": type(value).__name__,
+                                    "data": str(value)
+                                }
+                            else:
+                                # Without fallback, propagate the exception
+                                raise
+
+                return {
+                    "__type_code": MsgPackSerializer.TYPE_CUSTOM_OBJECT,
+                    "type": obj.__class__.__name__,
+                    "module": obj.__class__.__module__,
+                    "data": slot_dict
+                }
+            except Exception as e:
+                if fallback:
+                    return {
+                        "__type_code": MsgPackSerializer.TYPE_STRING_FALLBACK,
+                        "type": type(obj).__name__,
+                        "data": str(obj)
+                    }
+                raise SerializationError(f"Object of type {type(obj).__name__} is not serializable: {str(e)}")
+
+        # As a last resort, if fallback is enabled, convert to string but preserve type info
+        if fallback:
+            return {
+                "__type_code": MsgPackSerializer.TYPE_STRING_FALLBACK,
+                "type": type(obj).__name__,
+                "data": str(obj)
+            }
+
+        # If we reach here without returning and fallback is False, raise an error
+        raise SerializationError(f"Object of type {type(obj).__name__} is not serializable")
+
+    @staticmethod
+    def _decode_hook(obj: Dict[str, Any]) -> Any:
+        """Custom decoder for handling Python types not natively supported by msgpack."""
+        # Only process dictionaries with a type code
+        if not isinstance(obj, dict) or "__type_code" not in obj:
+            return obj
+
+        type_code = obj["__type_code"]
+
+        # Handle datetime objects
+        if type_code == MsgPackSerializer.TYPE_DATETIME:
+            return datetime.datetime.fromisoformat(obj["data"])
+
+        # Handle UUID objects
+        if type_code == MsgPackSerializer.TYPE_UUID:
+            return uuid.UUID(obj["data"])
+
+        # Handle string fallback representations - return with clear type annotation
+        if type_code == MsgPackSerializer.TYPE_STRING_FALLBACK:
+            return {
+                "__serialized_string_of_type": obj["type"],
+                "value": obj["data"]
+            }
+
+        # Handle custom objects
+        if type_code == MsgPackSerializer.TYPE_CUSTOM_OBJECT:
+            return {
+                "__type": obj["type"],
+                "__module": obj["module"],
+                **obj["data"]
+            }
+
+        return obj
+
+
 class TaskCache:
     """
     Task cache manager for AsyncTaskWorker.
-    Handles cache key generation and serialization.
+    Uses improved serialization with better type support.
     """
 
     def __init__(
             self,
             adapter: CacheAdapter,
             default_ttl: Optional[int] = None,
-            enabled: bool = True
+            enabled: bool = True,
+            max_serialized_size: int = 10 * 1024 * 1024,  # 10 MB default
     ):
         """
         Initialize the task cache.
@@ -164,10 +391,12 @@ class TaskCache:
             adapter: Cache adapter implementation
             default_ttl: Default time-to-live in seconds (None for no expiry)
             enabled: Whether caching is enabled by default
+            max_serialized_size: Maximum size in bytes for serialized objects
         """
         self.adapter = adapter
         self.default_ttl = default_ttl
         self.enabled = enabled
+        self.max_serialized_size = max_serialized_size
 
     @staticmethod
     def generate_key(func_name: str, args: tuple, kwargs: dict) -> str:
@@ -182,30 +411,22 @@ class TaskCache:
         Returns:
             Cache key string
         """
-        # Try JSON serialization first (most efficient)
         try:
-            key_parts = [func_name, json.dumps(args), json.dumps(kwargs, sort_keys=True)]
-            key_string = ":".join(key_parts)
-            return hashlib.md5(key_string.encode()).hexdigest()
-        except (TypeError, ValueError) as e:
-            logger.debug(f"JSON serialization failed for cache key: {e}")
+            # Sort kwargs by key for consistent serialization
+            sorted_kwargs = dict(sorted(kwargs.items()))
 
-        # Try pickle serialization if JSON fails
-        try:
-            pickled = pickle.dumps((args, kwargs))
-            key_string = f"{func_name}:{hashlib.md5(pickled).hexdigest()}"
-            return hashlib.md5(key_string.encode()).hexdigest()
-        except Exception as e:
-            logger.warning(f"Pickle serialization failed for cache key: {e}")
+            # Create a data structure to serialize
+            data_to_hash = [func_name, args, sorted_kwargs]
 
-        # Last resort - use string representation
-        try:
-            key_string = f"{func_name}:{str(args)}:{str(sorted(kwargs.items()))}"
-            return hashlib.md5(key_string.encode()).hexdigest()
-        except Exception as e:
-            logger.error(f"Failed to generate cache key: {e}")
+            # Serialize with msgpack
+            packed_data = MsgPackSerializer.encode(data_to_hash)
+
+            # Generate MD5 hash of the serialized data
+            return hashlib.md5(packed_data).hexdigest()
+        except SerializationError as e:
+            logger.warning(f"Error generating cache key: {str(e)}")
             # Generate a unique key that won't match anything else
-            return hashlib.md5(f"{func_name}:{uuid.uuid4()}".encode()).hexdigest()
+            return f"error_{func_name}_{uuid.uuid4().hex}"
 
     async def get(self, func_name: str, args: tuple, kwargs: dict) -> Tuple[bool, Any]:
         """
@@ -222,8 +443,12 @@ class TaskCache:
         if not self.enabled:
             return False, None
 
-        key = self.generate_key(func_name, args, kwargs)
-        return await self.adapter.get(key)
+        try:
+            key = self.generate_key(func_name, args, kwargs)
+            return await self.adapter.get(key)
+        except Exception as e:
+            logger.warning(f"Error retrieving from cache: {str(e)}")
+            return False, None
 
     async def set(
             self,
@@ -232,7 +457,7 @@ class TaskCache:
             kwargs: dict,
             result: Any,
             ttl: Optional[int] = None
-    ) -> None:
+    ) -> bool:
         """
         Store result in cache.
 
@@ -242,13 +467,46 @@ class TaskCache:
             kwargs: Keyword arguments
             result: Result to cache
             ttl: Time-to-live override (uses default if None)
+
+        Returns:
+            True if successfully cached, False otherwise
         """
         if not self.enabled:
-            return
+            return False
 
-        key = self.generate_key(func_name, args, kwargs)
-        effective_ttl = ttl if ttl is not None else self.default_ttl
-        await self.adapter.set(key, result, effective_ttl)
+        try:
+            # Try to serialize the result. 
+            # By default, do not use string fallback to ensure proper round-trip serialization
+            # Clients can explicitly enable fallback via the TaskCache.fallback_to_str attribute
+            fallback_enabled = getattr(self, "fallback_to_str", False)
+
+            try:
+                serialized = MsgPackSerializer.encode(
+                    result,
+                    fallback=fallback_enabled
+                )
+
+                # If fallback is enabled, add a warning log to help diagnose potential issues
+                if fallback_enabled:
+                    logger.debug(f"Serializing task result for {func_name} with string fallback enabled")
+            except SerializationError as e:
+                logger.warning(f"Task result for {func_name} is not serializable: {str(e)}")
+                return False
+
+            # Check if the serialized result exceeds the maximum allowed size
+            if len(serialized) > self.max_serialized_size:
+                logger.warning(
+                    f"Serialized result size {len(serialized)} exceeds maximum allowed size {self.max_serialized_size}"
+                )
+                return False
+
+            key = self.generate_key(func_name, args, kwargs)
+            effective_ttl = ttl if ttl is not None else self.default_ttl
+            await self.adapter.set(key, result, effective_ttl)
+            return True
+        except Exception as e:
+            logger.warning(f"Error storing in cache: {str(e)}")
+            return False
 
     async def invalidate(self, func_name: str, args: tuple, kwargs: dict) -> bool:
         """
@@ -262,9 +520,16 @@ class TaskCache:
         Returns:
             True if invalidated, False if not found
         """
-        key = self.generate_key(func_name, args, kwargs)
-        return await self.adapter.delete(key)
+        try:
+            key = self.generate_key(func_name, args, kwargs)
+            return await self.adapter.delete(key)
+        except Exception as e:
+            logger.warning(f"Error invalidating cache: {str(e)}")
+            return False
 
     async def clear(self) -> None:
         """Clear all cached results."""
-        await self.adapter.clear()
+        try:
+            await self.adapter.clear()
+        except Exception as e:
+            logger.error(f"Error clearing cache: {str(e)}")
