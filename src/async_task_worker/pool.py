@@ -41,6 +41,7 @@ class WorkerPool:
             on_task_complete: Optional[TaskStatusCallback] = None,
             on_task_failed: Optional[TaskStatusCallback] = None,
             on_task_cancelled: Optional[TaskStatusCallback] = None,
+            log_idle_workers: bool = False,
     ):
         """
         Initialize the worker pool.
@@ -54,6 +55,7 @@ class WorkerPool:
             on_task_complete: Callback when a task completes successfully
             on_task_failed: Callback when a task fails
             on_task_cancelled: Callback when a task is cancelled
+            log_idle_workers: Whether to log periodic idle worker messages (default: False)
         """
         self.task_queue = task_queue
         self.task_executor = task_executor
@@ -65,6 +67,7 @@ class WorkerPool:
         self.on_task_complete = on_task_complete
         self.on_task_failed = on_task_failed
         self.on_task_cancelled = on_task_cancelled
+        self.log_idle_workers = log_idle_workers
 
         self.workers: List[asyncio.Task] = []
         self.running = False
@@ -183,7 +186,7 @@ class WorkerPool:
         while self.running:
             try:
                 # Simplified task processing flow
-                task_item = await self._get_next_task(worker_id, last_activity, idle_log_interval)
+                task_item = await self._get_next_task(worker_id, last_activity, idle_log_interval, self.log_idle_workers)
                 if task_item is None:
                     continue
 
@@ -206,15 +209,15 @@ class WorkerPool:
 
         logger.debug(f"Worker {worker_id} stopped")
 
-    async def _get_next_task(self, worker_id, last_activity, idle_log_interval):
+    async def _get_next_task(self, worker_id, last_activity, idle_log_interval, log_idle_workers=False):
         """Get the next task with timeout and idle logging"""
         try:
             async with asyncio.timeout(self.worker_poll_interval):
                 return await self.task_queue.get()
         except TimeoutError:
-            # Log idle status if needed
+            # Log idle status if enabled and needed
             current_time = time.time()
-            if current_time - last_activity > idle_log_interval:
+            if log_idle_workers and current_time - last_activity > idle_log_interval:
                 logger.debug(f"Worker {worker_id} idle for {current_time - last_activity:.1f}s")
                 return None
             # Check if we should continue running
