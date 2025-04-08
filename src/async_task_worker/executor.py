@@ -31,7 +31,16 @@ class CacheManager(Protocol):
     """Type protocol for cache manager"""
     enabled: bool
 
-    async def get(self, func_name: str, args: Tuple, kwargs: Dict) -> Tuple[bool, Any]: ...
+    async def get(
+            self,
+            func_name: str,
+            args: Tuple,
+            kwargs: Dict,
+            *,
+            cache_key_fn: Optional[Callable] = None,
+            task_id: Optional[str] = None,
+            metadata: Optional[Dict[str, Any]] = None
+    ) -> Tuple[bool, Any]: ...
 
     async def set(
             self,
@@ -39,7 +48,11 @@ class CacheManager(Protocol):
             args: Tuple,
             kwargs: Dict,
             result: Any,
-            ttl: Optional[int] = None
+            *,
+            ttl: Optional[int] = None,
+            cache_key_fn: Optional[Callable] = None,
+            task_id: Optional[str] = None,
+            metadata: Optional[Dict[str, Any]] = None
     ) -> bool: ...
 
 
@@ -98,33 +111,45 @@ class TaskExecutor:
         use_cache: bool = kwargs.pop("use_cache", True)
         cache_ttl: Optional[int] = kwargs.pop("cache_ttl", None)
 
+        # Remove special cache control parameters that should not be passed to task function
+        if "_cache_entry_id" in kwargs:
+            kwargs.pop("_cache_entry_id")
+
         # Try to get from cache if caching is enabled
         if use_cache and self.cache_manager and self.cache_manager.enabled:
             try:
                 func_name = task_func.__name__
+                # Extract custom cache entry ID and prepare cache kwargs
                 # Make a copy without progress_callback for cache key
-                cache_kwargs = {k: v for k, v in kwargs.items()
+                function_kwargs = kwargs.copy()
+                cache_entry_id = function_kwargs.pop("_cache_entry_id", task_id)
+                cache_kwargs = {k: v for k, v in function_kwargs.items()
                                 if k != "progress_callback"}
 
-                cache_hit, cached_result = await self.cache_manager.get(func_name, args, cache_kwargs)
+                cache_hit, cached_result = await self.cache_manager.get(
+                    func_name,
+                    args,
+                    cache_kwargs,
+                    task_id=cache_entry_id
+                )
 
                 if cache_hit:
                     logger.info(f"Task {task_id} using cached result")
                     return cached_result
             except Exception as e:
                 error_msg = f"Cache retrieval error for task {task_id}: {str(e)}"
-                logger.error(error_msg, 
-                            extra={
-                                "task_id": task_id,
-                                "function": task_func.__name__,
-                                "error_type": type(e).__name__,
-                                "cache_operation": "get"
-                            }, 
-                            exc_info=True)
-                
+                logger.error(error_msg,
+                             extra={
+                                 "task_id": task_id,
+                                 "function": task_func.__name__,
+                                 "error_type": type(e).__name__,
+                                 "cache_operation": "get"
+                             },
+                             exc_info=True)
+
                 # Don't use cache for this task anymore since retrieval failed
                 use_cache = False
-                
+
                 # Continue execution without caching as a fallback strategy
                 # raise TaskExecutionError(f"Cache retrieval failed: {error_msg}", original_error=e, task_id=task_id)
 
@@ -169,20 +194,32 @@ class TaskExecutor:
             if use_cache and self.cache_manager and self.cache_manager.enabled:
                 try:
                     func_name = task_func.__name__
-                    cache_kwargs = {k: v for k, v in kwargs.items()
+                    
+                    # Extract custom cache entry ID and prepare cache kwargs
+                    function_kwargs = kwargs.copy()
+                    cache_entry_id = function_kwargs.pop("_cache_entry_id", task_id)
+                    cache_kwargs = {k: v for k, v in function_kwargs.items()
                                     if k != "progress_callback"}
-                    await self.cache_manager.set(func_name, args, cache_kwargs, result, cache_ttl)
+
+                    await self.cache_manager.set(
+                        func_name,
+                        args,
+                        cache_kwargs,
+                        result,
+                        ttl=cache_ttl,
+                        task_id=cache_entry_id
+                    )
                 except Exception as e:
                     error_msg = f"Error caching result for task {task_id}: {str(e)}"
-                    logger.error(error_msg, 
-                               extra={
-                                   "task_id": task_id,
-                                   "function": task_func.__name__,
-                                   "error_type": type(e).__name__,
-                                   "cache_operation": "set",
-                                   "ttl": cache_ttl
-                               }, 
-                               exc_info=True)
+                    logger.error(error_msg,
+                                 extra={
+                                     "task_id": task_id,
+                                     "function": task_func.__name__,
+                                     "error_type": type(e).__name__,
+                                     "cache_operation": "set",
+                                     "ttl": cache_ttl
+                                 },
+                                 exc_info=True)
                     # Continue and return the result even if caching fails
 
             execution_time = time.time() - start_time

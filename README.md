@@ -711,15 +711,24 @@ async with worker.cache._cache.temporarily_disabled():
     result = await worker.add_task(my_task, arg1, arg2, use_cache=True)
     # The cache is actually bypassed despite use_cache=True
 
-# Get cache key for a specific task ID
-key = await worker.cache.get_cache_key_for_task("task-123")
+# Generate a composite entry ID for consistent cache access
+func_name = "my_func"
+task_id = "b4fd93c8-57e3-4fea-bcc6-04be7499b28f"
+entry_id = task_worker.cache.generate_entry_id(func_name, task_id)
 
-# Invalidate cache by task ID
-await worker.cache.invalidate_by_task_id("task-123")
+# Get cached result using the composite entry ID
+hit, result = await task_worker.cache.get_by_task_id(entry_id)
+if hit:
+    print(f"Retrieved cached result: {result}")
+
+# Invalidate cache by the same entry ID
+success = await task_worker.cache.invalidate_by_task_id(entry_id)
+if success:
+    print("Cache entry successfully invalidated")
 
 # Control the background cleanup task
-await worker.cache.start_cleanup_task()  # Start periodic cleanup
-await worker.cache.stop_cleanup_task()   # Stop periodic cleanup
+await task_worker.cache.start_cleanup_task()  # Start periodic cleanup
+await task_worker.cache.stop_cleanup_task()   # Stop periodic cleanup
 ```
 
 ### Cache Management
@@ -973,7 +982,9 @@ print(f"Task failed: {info.error}")  # "Value cannot be negative"
 - `get(func_name, args, kwargs, cache_key_fn=None, task_id=None, metadata=None)`: Get cached result
 - `set(func_name, args, kwargs, result, ttl=None, cache_key_fn=None, task_id=None, metadata=None)`: Store result in cache
 - `invalidate(func_name, args, kwargs, cache_key_fn=None, task_id=None, metadata=None)`: Invalidate specific cache entry
-- `invalidate_by_task_id(task_id)`: Invalidate by task ID
+- `generate_entry_id(func_name, task_id)`: Generate a composite entry ID for cache operations
+- `get_by_task_id(task_id)`: Get cached result using only the task ID
+- `invalidate_by_task_id(task_id)`: Invalidate cache entry by task ID
 - `clear()`: Clear the entire cache
 - `start_cleanup_task()`: Start the periodic cleanup task
 - `stop_cleanup_task()`: Stop the periodic cleanup task
@@ -1101,6 +1112,25 @@ async def check_task(task_id):
                 raise RuntimeError(f"Task failed: {task_data['error']}")
             else:
                 return f"Task is {status} ({task_data['progress']*100:.1f}% complete)"
+```
+
+### Example: Reading Result from Cache by Task ID
+
+```python
+async def get_cached_result(task_worker, func_name, task_id):
+    # Generate the composite entry ID for cache lookup
+    entry_id = task_worker.cache.generate_entry_id(func_name, task_id)
+    
+    # Try to get result directly from cache using the entry_id
+    hit, result = await task_worker.cache.get_by_task_id(entry_id)
+    
+    if hit:
+        print(f"Retrieved from cache: {result}")
+        return result
+    else:
+        print(f"No cached result found for function {func_name}, task {task_id}")
+        # Fall back to retrieving via task info
+        return await handle_task_not_in_cache(task_worker, task_id)
 ```
 
 ## License

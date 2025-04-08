@@ -89,6 +89,11 @@ async def test_task_id_operations(cache_adapter):
     assert hit is True
     assert result == "task_result"
 
+    # Get by task_id directly
+    hit, direct_result = await cache_adapter.get_by_task_id(task_id)
+    assert hit is True
+    assert direct_result == "task_result"
+    
     # Invalidate by task_id
     success = await cache_adapter.invalidate_by_task_id(task_id)
     assert success is True
@@ -100,6 +105,10 @@ async def test_task_id_operations(cache_adapter):
         kwargs={},
         task_id=task_id
     )
+    assert hit is False
+    
+    # Verify direct access also fails
+    hit, _ = await cache_adapter.get_by_task_id(task_id)
     assert hit is False
 
 

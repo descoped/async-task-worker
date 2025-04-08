@@ -9,17 +9,42 @@ from typing import Any, Dict, Tuple, Optional, Callable
 
 from async_cache import AsyncCache
 from async_cache.adapters import MemoryCacheAdapter
+from async_task_worker.executor import CacheManager
 
 logger = logging.getLogger(__name__)
 
-
-class AsyncCacheAdapter:
+class AsyncCacheAdapter(CacheManager):
     """
     Adapter that provides a bridge between AsyncTaskWorker and async_cache package.
     
     This adapter translates between task-specific concepts in AsyncTaskWorker and 
-    the more generic caching concepts in AsyncCache.
+    the more generic caching concepts in AsyncCache. Implements the CacheManager protocol
+    so it can be used directly with TaskExecutor.
+    
+    Default behavior:
+    - Creates a composite cache key using function name and task_id
+    - Enables direct retrieval by task_id using get_by_task_id method
+    - Formats keys as "function_name:task_id" for easy debugging
+    
+    The generate_entry_id static method is provided to create consistent composite
+    entry IDs for use with get_by_task_id and invalidate_by_task_id.
     """
+
+    @staticmethod
+    def generate_entry_id(func_name: str, task_id: Optional[str]) -> str:
+        """
+        Generate a composite entry ID combining function name and task ID.
+        
+        Args:
+            func_name: Name of the task function
+            task_id: Task UUID or identifier, or None
+            
+        Returns:
+            Composite ID in the format "func_name:task_id" or "func_name:unknown" if task_id is None
+        """
+        if task_id is None:
+            return f"{func_name}:unknown"
+        return f"{func_name}:{task_id}"
 
     def __init__(
             self,
@@ -44,7 +69,16 @@ class AsyncCacheAdapter:
         # Create memory adapter
         self._adapter = MemoryCacheAdapter(max_size=max_size)
 
-        # Create AsyncCache instance
+        # Create a default key function that combines function name and task_id
+        from async_cache.key_utils import compose_key_functions, extract_key_component
+
+        # Default key function combines function name and task_id if present
+        self._default_key_fn = compose_key_functions(
+            extract_key_component("fn_name"),
+            lambda ctx: ctx.get("entry_id", "unknown") if "entry_id" in ctx else "no_task_id"
+        )
+
+        # Create AsyncCache instance with our custom key function
         self._cache = AsyncCache(
             adapter=self._adapter,
             default_ttl=default_ttl,
@@ -85,10 +119,13 @@ class AsyncCacheAdapter:
         Returns:
             Tuple of (cache_hit, result)
         """
+        # Use our default key function if none is provided
+        effective_key_fn = cache_key_fn or self._default_key_fn
+
         # Map task_id to entry_id for async_cache
         return await self._cache.get(
             func_name, args, kwargs,
-            cache_key_fn=cache_key_fn,
+            cache_key_fn=effective_key_fn,
             entry_id=task_id,
             metadata=metadata
         )
@@ -120,11 +157,14 @@ class AsyncCacheAdapter:
         Returns:
             True if successfully cached, False otherwise
         """
+        # Use our default key function if none is provided
+        effective_key_fn = cache_key_fn or self._default_key_fn
+
         # Map task_id to entry_id for async_cache
         return await self._cache.set(
             func_name, args, kwargs, result,
             ttl=ttl,
-            cache_key_fn=cache_key_fn,
+            cache_key_fn=effective_key_fn,
             entry_id=task_id,
             metadata=metadata
         )
@@ -152,12 +192,33 @@ class AsyncCacheAdapter:
         Returns:
             True if invalidated, False if not found
         """
+        # Use our default key function if none is provided
+        effective_key_fn = cache_key_fn or self._default_key_fn
+
         return await self._cache.invalidate(
             func_name, args, kwargs,
-            cache_key_fn=cache_key_fn,
+            cache_key_fn=effective_key_fn,
             entry_id=task_id,
             metadata=metadata
         )
+
+    async def get_by_task_id(self, task_id: str) -> Tuple[bool, Any]:
+        """
+        Get cached result for a task using just the task ID.
+        
+        Args:
+            task_id: Task ID associated with the cache entry
+            
+        Returns:
+            Tuple of (cache_hit, result)
+        """
+        # Get the cache key for this task_id
+        cache_key = await self._cache.get_cache_key_for_id(task_id)
+        if not cache_key:
+            return False, None
+
+        # Use the adapter directly to fetch the result
+        return await self._cache.adapter.get(cache_key)
 
     async def invalidate_by_task_id(self, task_id: str) -> bool:
         """
