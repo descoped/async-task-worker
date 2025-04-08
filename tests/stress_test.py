@@ -98,7 +98,7 @@ async def test_basic_functionality(workers=3, task_count=10):
         # Print results
         elapsed = time.time() - start_time
         print(f"Completed {task_count} tasks in {elapsed:.2f} seconds")
-        print_task_stats(worker, task_ids)
+        await print_task_stats(worker, task_ids)
 
     finally:
         await worker.stop()
@@ -183,7 +183,7 @@ async def test_priority_handling(workers=5, task_count=30):
         # Analyze completion times by priority
         for priority_name, data in task_data.items():
             for task_id in data["ids"]:
-                info = worker.get_task_info(task_id)
+                info = await worker.get_task_info(task_id)
                 if info.status == TaskStatus.COMPLETED:
                     data["times"].append(info.result["time"])
 
@@ -271,7 +271,7 @@ async def test_failing_tasks(workers=5, task_count=20):
         # Count failures
         statuses = {}
         for task_id in task_ids:
-            info = worker.get_task_info(task_id)
+            info = await worker.get_task_info(task_id)
             if info.status not in statuses:
                 statuses[info.status] = 0
             statuses[info.status] += 1
@@ -299,7 +299,7 @@ async def monitor_tasks(worker, task_ids, timeout=30, interval=0.5, print_progre
         total_progress = 0
 
         for task_id in task_ids:
-            info = worker.get_task_info(task_id)
+            info = await worker.get_task_info(task_id)
             if info.status not in statuses:
                 statuses[info.status] = 0
             statuses[info.status] += 1
@@ -329,13 +329,13 @@ async def monitor_tasks(worker, task_ids, timeout=30, interval=0.5, print_progre
     return time.time() - start_time < timeout
 
 
-def print_task_stats(worker, task_ids):
+async def print_task_stats(worker, task_ids):
     """Print statistics about task execution"""
     statuses = {}
     durations = []
 
     for task_id in task_ids:
-        info = worker.get_task_info(task_id)
+        info = await worker.get_task_info(task_id)
 
         # Count statuses
         if info.status not in statuses:

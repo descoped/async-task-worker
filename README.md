@@ -22,6 +22,7 @@ pip install async-task-worker
 - **Task Registry**: Register task handlers by type
 - **Worker Pool Architecture**: Decoupled worker pool implementation for improved flexibility
 - **API Integration**: Ready-to-use FastAPI router for task management
+- **Modular Structure**: Clean, consistent module organization with a logical structure
 
 ## Sequence Diagrams
 
@@ -43,7 +44,7 @@ The system follows a modular, decoupled design:
 3. **TaskQueue**: Manages prioritized task queuing and retrieval
 4. **TaskExecutor**: Executes individual tasks with timeout and caching
 5. **TaskRegistry**: Provides a global registry for task handlers
-6. **TaskCache**: Implements optional result caching
+6. **AsyncCacheAdapter**: Provides integration with the async_cache package for efficient result caching
 
 The workflow proceeds as follows:
 
@@ -498,10 +499,12 @@ The task worker includes an optional caching system that stores task results to 
 
 #### How Caching Works
 
-1. **Cache Key Generation**: A unique key is created for each task based on:
+1. **Flexible Cache Key Generation**: A unique key is created for each task based on:
    - Task function name
    - Positional arguments
    - Keyword arguments
+   - Optional task metadata
+   - User-defined custom key functions
 
 2. **Lookup Process**:
    - Before executing a task, the worker checks if the result is already in cache
@@ -521,12 +524,20 @@ The task worker includes an optional caching system that stores task results to 
 worker = AsyncTaskWorker(
     cache_enabled=True,        # Enable the cache
     cache_ttl=3600,            # Default time-to-live: 1 hour (in seconds)
-    cache_max_size=1000        # Maximum number of entries
+    cache_max_size=1000,       # Maximum number of entries
+    validate_keys=True,        # Enable validation of cache keys (optional)
+    cleanup_interval=900       # Cleanup interval for stale mappings (15 min)
 )
 
 # Disable cache globally but allow per-task override
 worker = AsyncTaskWorker(
     cache_enabled=False        # Globally disabled
+)
+
+# Disable automatic cleanup of stale mappings
+worker = AsyncTaskWorker(
+    cache_enabled=True,
+    cleanup_interval=0         # Disable automatic cleanup
 )
 ```
 
@@ -539,7 +550,8 @@ task_id = await worker.add_task(
     arg1,
     arg2,
     use_cache=True,           # Enable caching for this task
-    cache_ttl=120             # Custom TTL: 2 minutes
+    cache_ttl=120,            # Custom TTL: 2 minutes
+    metadata={"version": "1.2"} # Optional metadata for key generation
 )
 
 # Bypass cache for a specific task even if globally enabled
@@ -549,6 +561,166 @@ task_id = await worker.add_task(
     arg2,
     use_cache=False           # Disable caching for this task
 )
+
+# Use a custom cache key function
+task_id = await worker.add_task(
+    my_task,
+    arg1, 
+    arg2,
+    use_cache=True,
+    cache_key_fn=my_custom_key_function  # Custom cache key generator
+)
+```
+
+### Using the Cache Adapter
+
+AsyncTaskWorker uses `AsyncCacheAdapter` which provides a clean integration with the `async_cache` package, enabling efficient caching with flexible key generation and storage strategies:
+
+```python
+from async_task_worker import AsyncCacheAdapter
+from async_cache.adapters import RedisCacheAdapter
+
+# Using Redis as a cache backend
+import redis.asyncio as redis
+
+redis_client = redis.Redis(host='localhost', port=6379, db=0)
+redis_adapter = RedisCacheAdapter(redis_client)
+
+cache_adapter = AsyncCacheAdapter(
+    default_ttl=3600,          # Default TTL: 1 hour
+    enabled=True,              # Enable caching
+    max_serialized_size=5_242_880,  # 5MB max serialized size
+    validate_keys=True,        # Validate cache keys
+    cleanup_interval=900,      # Cleanup every 15 minutes
+    redis_adapter=redis_adapter # Use Redis adapter
+)
+
+# Then pass to AsyncTaskWorker
+worker = AsyncTaskWorker(
+    max_workers=5,
+    cache_adapter=cache_adapter,
+    cache_enabled=True
+)
+```
+
+### Customizable Cache Key Generation
+
+The caching system supports flexible, composable cache key functions for advanced caching scenarios.
+
+#### Context Dictionary
+
+Each cache key function receives a context dictionary containing:
+
+```python
+context = {
+    "func_name": "task_function_name",
+    "args": (arg1, arg2, ...),  # Positional arguments
+    "kwargs": {"key1": value1, ...},  # Keyword arguments
+    "entry_id": "unique-id",  # Optional task/entry ID
+    "metadata": {"version": "1.0", ...}  # Optional metadata
+}
+```
+
+#### Basic Custom Key Function
+
+You can create a custom key function to control exactly how cache keys are generated:
+
+```python
+def version_based_key(context):
+    """Generate a cache key based on function name and version."""
+    func = context["func_name"]
+    version = context.get("metadata", {}).get("version", "1.0")
+    return f"{func}:v{version}"
+
+# Use the custom key function
+task_id = await worker.add_task(
+    process_data,
+    dataset,
+    use_cache=True,
+    metadata={"version": "2.0"},
+    cache_key_fn=version_based_key
+)
+```
+
+#### Composable Cache Keys
+
+For complex caching scenarios, you can compose multiple key functions together:
+
+```python
+from async_cache import compose_key_functions, extract_key_component
+
+# Create component extractors
+user_id = extract_key_component("kwargs.user_id")
+api_version = extract_key_component("metadata.version")
+func_name = extract_key_component("func_name")
+
+# Compose them into a single key function
+composite_key = compose_key_functions(func_name, user_id, api_version)
+
+# Use the composite key function 
+task_id = await worker.add_task(
+    get_user_data,
+    user_id=123,
+    use_cache=True,
+    metadata={"version": "v2"},
+    cache_key_fn=composite_key
+)
+# Will generate a key like: "get_user_data:123:v2"
+```
+
+#### Key Component Decorator
+
+For better readability and reuse, you can use the decorator-based approach:
+
+```python
+from async_cache import key_component, compose_key_functions
+
+# Create named components with decorators
+@key_component("user")
+def user_component(context):
+    return str(context["kwargs"].get("user_id", "anonymous"))
+
+@key_component("region")
+def region_component(context):
+    return context["kwargs"].get("region", "global")
+
+@key_component()  # Uses function name as component name
+def timestamp(context):
+    return context.get("metadata", {}).get("timestamp", "0")
+
+# Compose named components
+composite_key = compose_key_functions(user_component, region_component, timestamp)
+
+# Use in a task
+task_id = await worker.add_task(
+    get_regional_data,
+    user_id=123,
+    region="eu-west",
+    use_cache=True,
+    metadata={"timestamp": "2023-04-01"},
+    cache_key_fn=composite_key
+)
+# Will generate a key like: "user:123:region:eu-west:timestamp:2023-04-01"
+```
+
+#### Cache Utilities
+
+```python
+# Temporarily disable the cache (context manager)
+async with worker.cache._cache.temporarily_disabled():
+    # Cache operations in this block will be skipped
+    result = await worker.add_task(my_task, arg1, arg2, use_cache=True)
+    # The cache is actually bypassed despite use_cache=True
+
+# Get cache key for a specific task ID
+key = await worker.cache.get_cache_key_for_task("task-123")
+
+# Invalidate cache by task ID
+await worker.cache.invalidate_by_task_id("task-123")
+
+# Control the background cleanup task
+await worker.cache.start_cleanup_task()  # Start periodic cleanup
+await worker.cache.stop_cleanup_task()   # Stop periodic cleanup
 ```
 
 ### Cache Management
@@ -569,68 +741,124 @@ invalidated = await worker.invalidate_cache(task_func, arg1, arg2)
 await worker.clear_cache()
 ```
 
-### Custom Cache Adapters
+### Cache Adapters
 
-By default, the task worker uses an in-memory cache, but you can create custom cache adapters for persistent storage or distributed caching.
+The `async_cache` package provides several cache adapters that can be used with AsyncTaskWorker:
+
+1. **MemoryCacheAdapter**: In-memory LRU cache (default)
+2. **RedisCacheAdapter**: Redis-backed distributed cache
 
 ```python
-from async_task_worker import CacheAdapter
-from typing import Any, Optional, Tuple
+# Using Memory Adapter (default)
+from async_cache.adapters import MemoryCacheAdapter
 
+memory_adapter = MemoryCacheAdapter(max_size=10000)
+cache_adapter = AsyncCacheAdapter(adapter=memory_adapter)
 
-class RedisCache(CacheAdapter):
-   """Example Redis-based cache adapter"""
-
-   def __init__(self, redis_client):
-      self.redis = redis_client
-
-   async def get(self, key: str) -> Tuple[bool, Any]:
-      """Get a value from the cache"""
-      value = await self.redis.get(key)
-      if value is None:
-         return False, None
-      # Deserialize value (e.g., from JSON or pickle)
-      deserialized = self._deserialize(value)
-      return True, deserialized
-
-   async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
-      """Set a value in the cache"""
-      # Serialize value (e.g., to JSON or pickle)
-      serialized = self._serialize(value)
-      await self.redis.set(key, serialized, ex=ttl)
-
-   async def delete(self, key: str) -> bool:
-      """Delete a value from the cache"""
-      result = await self.redis.delete(key)
-      return result > 0
-
-   async def clear(self) -> None:
-      """Clear all items (matching a pattern)"""
-      # Implementation depends on your Redis usage pattern
-      # For example, using a prefix for all keys
-      keys = await self.redis.keys("task_cache:*")
-      if keys:
-         await self.redis.delete(*keys)
-
-   def _serialize(self, value):
-      # Implementation
-      pass
-
-   def _deserialize(self, data):
-      # Implementation
-      pass
-
-
-# Use custom adapter
+# Using Redis Adapter
+from async_cache.adapters import RedisCacheAdapter
 import redis.asyncio as redis
 
 redis_client = redis.Redis(host='localhost', port=6379, db=0)
+redis_adapter = RedisCacheAdapter(redis_client, 
+                                 key_prefix="tasks:",
+                                 serializer="msgpack")
 
+cache_adapter = AsyncCacheAdapter(adapter=redis_adapter)
+
+# Pass to AsyncTaskWorker
 worker = AsyncTaskWorker(
    cache_enabled=True,
-   cache_adapter=RedisCache(redis_client)
+   cache_adapter=cache_adapter
 )
 ```
+
+### Real-World Examples
+
+#### Version-based Cache Invalidation
+
+```python
+# Create a cache key function that includes API version
+def versioned_cache_key(context):
+    func = context["func_name"]
+    version = context.get("metadata", {}).get("api_version", "v1")
+    return f"{func}:{version}"
+
+# User requests data with v1 API
+task_id1 = await worker.add_task(
+    get_user_data,
+    user_id=123,
+    use_cache=True,
+    metadata={"api_version": "v1"},
+    cache_key_fn=versioned_cache_key
+)
+
+# Later, after API update, same data with v2 API
+# Will use a different cache key, not reusing v1 cached result
+task_id2 = await worker.add_task(
+    get_user_data,
+    user_id=123,
+    use_cache=True,
+    metadata={"api_version": "v2"},
+    cache_key_fn=versioned_cache_key
+)
+```
+
+#### Multi-tenant Cache Isolation
+
+```python
+# Create a key function that isolates cache by tenant
+tenant_key = compose_key_functions(
+    extract_key_component("func_name"),
+    extract_key_component("metadata.tenant_id"),
+    extract_key_component("args.0")  # First arg value
+)
+
+# Different tenants share same function but get isolated cache
+for tenant_id in ["tenant1", "tenant2", "tenant3"]:
+    task_id = await worker.add_task(
+        process_data,
+        "sample_data",
+        use_cache=True,
+        metadata={"tenant_id": tenant_id},
+        cache_key_fn=tenant_key
+    )
+```
+
+### Automatic Cleanup of Stale Mappings
+
+The cache system includes an automatic cleanup mechanism to prevent memory leaks from orphaned task ID mappings when cache entries expire through TTL:
+
+```python
+# Configure a worker with cleanup enabled
+worker = AsyncTaskWorker(
+    cache_enabled=True,
+    cache_ttl=3600,            # 1 hour cache TTL
+    cleanup_interval=900       # Clean up stale mappings every 15 minutes
+)
+
+# The sequence of events:
+# 1. Add a task with caching enabled
+task_id = await worker.add_task(
+    process_data, 
+    dataset,
+    use_cache=True,
+    cache_ttl=60               # 1 minute TTL
+)
+
+# 2. The task_id is mapped to its cache key in task_key_map
+
+# 3. After 1 minute, the cache entry expires due to TTL
+
+# 4. Without cleanup, the mapping would remain in memory indefinitely
+
+# 5. With cleanup enabled, the background task periodically checks
+#    all mappings and removes any where the cache entry is gone
+
+# 6. Result: No memory leaks from expired cache entries
+```
+
+The cleanup task starts automatically with the worker and runs at the configured interval. It only removes mappings when the actual cache entries have expired or been removed, ensuring that all valid mappings are preserved.
 
 ## Advanced Usage
 
@@ -726,16 +954,32 @@ print(f"Task failed: {info.error}")  # "Value cannot be negative"
 
 ### AsyncTaskWorker
 
-- `__init__(max_workers=10, task_timeout=None)`: Initialize worker pool
+- `__init__(max_workers=10, task_timeout=None, cache_adapter=None, cache_enabled=False, cache_ttl=3600)`: Initialize worker pool
 - `start()`: Start the worker pool
 - `stop(timeout=5.0)`: Stop the worker pool
-- `add_task(task_func, *args, priority=0, task_id=None, metadata=None, **kwargs)`: Add a task to the queue
+- `add_task(task_func, *args, priority=0, task_id=None, metadata=None, use_cache=None, cache_ttl=None, cache_key_fn=None, **kwargs)`: Add a task to the queue
 - `get_task_info(task_id)`: Get information about a task
 - `get_all_tasks(status=None, limit=None, older_than=None)`: Get filtered list of tasks
 - `cancel_task(task_id)`: Cancel a running or pending task
 - `get_task_future(task_id)`: Get a future that resolves when the task completes
 - `wait_for_tasks(task_ids, timeout=None)`: Wait for multiple tasks to complete
 - `wait_for_any_task(task_ids, timeout=None)`: Wait for any of the specified tasks to complete
+- `invalidate_cache(task_func, *args, cache_key_fn=None, **kwargs)`: Invalidate a specific cache entry
+- `clear_cache()`: Clear all cache entries
+
+### AsyncCacheAdapter
+
+- `__init__(default_ttl=None, enabled=True, max_serialized_size=10485760, validate_keys=False, cleanup_interval=900, max_size=1000)`: Initialize the cache adapter
+- `get(func_name, args, kwargs, cache_key_fn=None, task_id=None, metadata=None)`: Get cached result
+- `set(func_name, args, kwargs, result, ttl=None, cache_key_fn=None, task_id=None, metadata=None)`: Store result in cache
+- `invalidate(func_name, args, kwargs, cache_key_fn=None, task_id=None, metadata=None)`: Invalidate specific cache entry
+- `invalidate_by_task_id(task_id)`: Invalidate by task ID
+- `clear()`: Clear the entire cache
+- `start_cleanup_task()`: Start the periodic cleanup task
+- `stop_cleanup_task()`: Stop the periodic cleanup task
+- `enabled`: Property to get/set if cache is enabled
+- `default_ttl`: Property to get/set default TTL
+- `cleanup_interval`: Property to get/set cleanup interval
 
 ### WorkerPool
 

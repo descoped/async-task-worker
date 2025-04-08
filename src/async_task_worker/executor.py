@@ -11,8 +11,8 @@ import logging
 import time
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, TypeVar, Protocol, runtime_checkable
 
-from async_task_worker.error_handler import TaskCancellationError, TaskExecutionError, TaskTimeoutError
-from async_task_worker.task_status import TaskInfo
+from async_task_worker.exceptions import TaskCancellationError, TaskExecutionError, TaskTimeoutError
+from async_task_worker.status import TaskInfo
 
 logger = logging.getLogger(__name__)
 
@@ -112,10 +112,21 @@ class TaskExecutor:
                     logger.info(f"Task {task_id} using cached result")
                     return cached_result
             except Exception as e:
-                # Log but continue - cache failures shouldn't block execution
-                logger.error(f"Cache retrieval error for task {task_id}: {str(e)}")
+                error_msg = f"Cache retrieval error for task {task_id}: {str(e)}"
+                logger.error(error_msg, 
+                            extra={
+                                "task_id": task_id,
+                                "function": task_func.__name__,
+                                "error_type": type(e).__name__,
+                                "cache_operation": "get"
+                            }, 
+                            exc_info=True)
+                
                 # Don't use cache for this task anymore since retrieval failed
                 use_cache = False
+                
+                # Continue execution without caching as a fallback strategy
+                # raise TaskExecutionError(f"Cache retrieval failed: {error_msg}", original_error=e, task_id=task_id)
 
         # Create a progress callback
         def progress_callback(progress: float) -> None:
@@ -162,7 +173,17 @@ class TaskExecutor:
                                     if k != "progress_callback"}
                     await self.cache_manager.set(func_name, args, cache_kwargs, result, cache_ttl)
                 except Exception as e:
-                    logger.error(f"Error caching result for task {task_id}: {str(e)}")
+                    error_msg = f"Error caching result for task {task_id}: {str(e)}"
+                    logger.error(error_msg, 
+                               extra={
+                                   "task_id": task_id,
+                                   "function": task_func.__name__,
+                                   "error_type": type(e).__name__,
+                                   "cache_operation": "set",
+                                   "ttl": cache_ttl
+                               }, 
+                               exc_info=True)
+                    # Continue and return the result even if caching fails
 
             execution_time = time.time() - start_time
             logger.info(f"Task {task_id} completed successfully in {execution_time:.3f}s")

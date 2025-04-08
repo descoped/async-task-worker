@@ -1,4 +1,3 @@
-# file: tests/test_task_registry.py
 import unittest
 from typing import Any
 
@@ -15,7 +14,7 @@ class TestTaskRegistry(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         # Clear task registry before each test
-        from async_task_worker.task_registry import _TASK_REGISTRY
+        from async_task_worker.registry import _TASK_REGISTRY
         _TASK_REGISTRY.clear()
 
     async def test_task_decorator(self):

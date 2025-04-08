@@ -5,8 +5,8 @@ from datetime import datetime
 import pytest
 
 from async_task_worker import AsyncTaskWorker, TaskStatus
-from async_task_worker.task_registry import task
-from async_task_worker.task_status import TaskInfo
+from async_task_worker.registry import task
+from async_task_worker.status import TaskInfo
 
 logger = logging.getLogger(__name__)
 

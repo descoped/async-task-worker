@@ -2,12 +2,14 @@
 Async Task Worker
 A robust asynchronous task worker system for Python applications.
 """
+# Export cache adapter
+from async_task_worker.adapters.cache_adapter import AsyncCacheAdapter
 # Export main AsyncTaskWorker class
-from async_task_worker.async_task_worker import (
+from async_task_worker.core import (
     AsyncTaskWorker,
 )
 # Export error handling classes
-from async_task_worker.error_handler import (
+from async_task_worker.exceptions import (
     ErrorCategory,
     TaskError,
     TaskDefinitionError,
@@ -16,41 +18,35 @@ from async_task_worker.error_handler import (
     TaskCancellationError,
     ErrorHandler,
 )
-# Export cache-related classes
-from async_task_worker.task_cache import (
-    CacheAdapter,
-    MemoryCacheAdapter,
-    TaskCache,
-)
 # Export task executor
-from async_task_worker.task_executor import (
+from async_task_worker.executor import (
     ProgressCallback,
     TaskExecutor,
 )
 # Export task future functionality
-from async_task_worker.task_futures import (
+from async_task_worker.futures import (
     TaskFutureManager,
 )
+# Export WorkerPool and related types
+from async_task_worker.pool import (
+    WorkerPool,
+    TaskStatusCallback,
+)
 # Export task queue
-from async_task_worker.task_queue import (
+from async_task_worker.queue import (
     TaskQueue,
     QueueStats,
 )
-from async_task_worker.task_registry import (
+from async_task_worker.registry import (
     task,
     register_task,
     get_task_function,
     get_all_task_types,
 )
 # Export task status module
-from async_task_worker.task_status import (
+from async_task_worker.status import (
     TaskStatus,
     TaskInfo,
-)
-# Export WorkerPool and related types
-from async_task_worker.worker_pool import (
-    WorkerPool,
-    TaskStatusCallback,
 )
 
 # Define what gets imported with `from async_task_worker import *`
@@ -77,9 +73,7 @@ __all__ = [
     'get_all_task_types',
 
     # Caching
-    'CacheAdapter',
-    'MemoryCacheAdapter',
-    'TaskCache',
+    'AsyncCacheAdapter',
 
     # Error handling
     'ErrorCategory',

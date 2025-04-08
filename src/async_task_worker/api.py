@@ -8,7 +8,7 @@ Example usage:
     from fastapi import FastAPI
     from contextlib import asynccontextmanager
     from async_task_worker import AsyncTaskWorker
-    from async_task_worker.task_worker_api import create_task_worker_router
+    from async_task_worker.api import create_task_worker_router
 
     # Create worker
     worker = AsyncTaskWorker()
@@ -42,7 +42,7 @@ from async_task_worker import (
     get_task_function,
     TaskInfo,
 )
-from async_task_worker.error_handler import (
+from async_task_worker.exceptions import (
     ErrorCategory,
     TaskCancellationError,
     TaskDefinitionError,

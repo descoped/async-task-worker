@@ -12,13 +12,13 @@ import weakref
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Self, TypeVar, Tuple
 
-from async_task_worker.error_handler import TaskError
-from async_task_worker.task_cache import CacheAdapter, MemoryCacheAdapter, TaskCache
-from async_task_worker.task_executor import TaskExecutor
-from async_task_worker.task_futures import TaskFutureManager
-from async_task_worker.task_queue import TaskQueue
-from async_task_worker.task_status import TaskInfo, TaskStatus
-from async_task_worker.worker_pool import WorkerPool
+from async_task_worker.adapters.cache_adapter import AsyncCacheAdapter
+from async_task_worker.exceptions import TaskError
+from async_task_worker.executor import TaskExecutor
+from async_task_worker.futures import TaskFutureManager
+from async_task_worker.pool import WorkerPool
+from async_task_worker.queue import TaskQueue
+from async_task_worker.status import TaskInfo, TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,8 @@ class AsyncTaskWorker:
             cache_enabled: bool = False,
             cache_ttl: Optional[int] = 3600,  # 1 hour default
             cache_max_size: Optional[int] = 1000,
-            cache_adapter: Optional[CacheAdapter] = None,
+            cache_adapter: Optional[AsyncCacheAdapter] = None,
+            cache_cleanup_interval: int = 900,  # 15 minutes default
             max_queue_size: Optional[int] = None,
             task_retention_days: Optional[int] = 7,
             cleanup_interval: int = 3600  # Cleanup every hour by default
@@ -61,7 +62,8 @@ class AsyncTaskWorker:
             cache_enabled: Whether task result caching is enabled
             cache_ttl: Default time-to-live for cached results in seconds
             cache_max_size: Maximum number of entries in the cache
-            cache_adapter: Custom cache adapter (default is in-memory)
+            cache_adapter: Custom cache adapter (default is AsyncCacheAdapter)
+            cache_cleanup_interval: Interval in seconds for cleaning up stale task ID mappings (0 to disable)
             max_queue_size: Maximum number of items in the queue
             task_retention_days: Days to keep completed tasks
             cleanup_interval: Seconds between cleanup operations
@@ -71,8 +73,20 @@ class AsyncTaskWorker:
         self.tasks_lock = asyncio.Lock()
 
         # Initialize cache
-        adapter = cache_adapter or MemoryCacheAdapter(max_size=cache_max_size)
-        self.cache = TaskCache(adapter, default_ttl=cache_ttl, enabled=cache_enabled)
+        if cache_adapter is not None:
+            # Use the provided cache adapter
+            self.cache = cache_adapter
+        else:
+            # Create a new AsyncCacheAdapter
+            logger.info("Creating new AsyncCacheAdapter for caching")
+            self.cache = AsyncCacheAdapter(
+                default_ttl=cache_ttl,
+                enabled=cache_enabled,
+                max_serialized_size=10 * 1024 * 1024,
+                validate_keys=False,
+                cleanup_interval=cache_cleanup_interval,
+                max_size=cache_max_size
+            )
 
         # Create task queue
         self.queue = TaskQueue(max_size=max_queue_size)
@@ -131,6 +145,10 @@ class AsyncTaskWorker:
             self.cleanup_task = asyncio.create_task(self._cleanup_loop())
             self.cleanup_task.set_name("task_cleanup")
 
+        # Start cache cleanup task if enabled
+        if self.cache.cleanup_interval > 0:
+            await self.cache.start_cleanup_task()
+
         logger.info(f"Started AsyncTaskWorker with {self.worker_pool.worker_count} workers")
 
     async def stop(self, timeout: float = 5.0) -> None:
@@ -141,32 +159,58 @@ class AsyncTaskWorker:
         self.running = False
         logger.info("Stopping AsyncTaskWorker...")
 
+        # List to collect errors during shutdown
+        shutdown_errors = []
+
         # Cancel cleanup task
         if self.cleanup_task and not self.cleanup_task.done():
-            self.cleanup_task.cancel()
             try:
-                await asyncio.wait_for(self.cleanup_task, timeout=1.0)
-            except asyncio.TimeoutError:
-                logger.warning("Cleanup task did not complete in time")
-            except asyncio.CancelledError:
-                logger.debug("Cleanup task cancelled")
+                self.cleanup_task.cancel()
+                try:
+                    await asyncio.wait_for(self.cleanup_task, timeout=1.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Cleanup task did not complete in time")
+                except asyncio.CancelledError:
+                    logger.debug("Cleanup task cancelled")
             except Exception as e:
+                shutdown_errors.append(f"Cleanup task error: {str(e)}")
                 logger.error(f"Error during cleanup task cancellation: {str(e)}")
+
+        # Stop cache cleanup task (must execute even if other operations fail)
+        try:
+            await self.cache.stop_cleanup_task()
+        except Exception as e:
+            shutdown_errors.append(f"Cache cleanup task error: {str(e)}")
+            logger.error(f"Error stopping cache cleanup task: {str(e)}")
 
         # Cancel all pending futures
         try:
             await self.future_manager.cancel_all_futures()
         except Exception as e:
+            shutdown_errors.append(f"Future cancellation error: {str(e)}")
             logger.error(f"Error cancelling futures: {str(e)}")
 
         # Stop worker pool
         try:
             await self.worker_pool.stop(timeout=timeout)
         except Exception as e:
+            shutdown_errors.append(f"Worker pool error: {str(e)}")
             logger.error(f"Error stopping worker pool: {str(e)}")
 
-        self.queue.clear_tracking()
-        logger.info("AsyncTaskWorker stopped")
+        # Always clear tracking, even if other components failed to stop
+        try:
+            self.queue.clear_tracking()
+        except Exception as e:
+            shutdown_errors.append(f"Queue tracking error: {str(e)}")
+            logger.error(f"Error clearing queue tracking: {str(e)}")
+
+        # Clean task_futures to prevent memory leaks
+        self._task_futures.clear()
+
+        if shutdown_errors:
+            logger.warning(f"AsyncTaskWorker stopped with {len(shutdown_errors)} errors")
+        else:
+            logger.info("AsyncTaskWorker stopped gracefully")
 
     async def add_task(
             self,
@@ -477,7 +521,13 @@ class AsyncTaskWorker:
         """
         logger.info(f"Attempting to cancel task {task_id}")
 
-        # Acquire the tasks_lock to check and update task state
+        # Prepare variables for tracking cancellation state
+        task_removed = False
+        task_running = False
+        task_status = None
+        cancel_result = False
+
+        # Acquire the tasks_lock to check task state
         async with self.tasks_lock:
             # Check if task exists and can be cancelled
             task_info = self.tasks.get(task_id)
@@ -485,80 +535,64 @@ class AsyncTaskWorker:
                 logger.warning(f"Task {task_id} not found for cancellation.")
                 return False
 
+            # Store the current status for decision making
+            task_status = task_info.status
+            
+            # If task is already in a terminal state, we're done
             if task_info.is_terminal_state():
-                logger.info(f"Task {task_id} is already in a terminal state ({task_info.status}).")
+                logger.info(f"Task {task_id} is already in a terminal state ({task_status}).")
                 return False
 
-            logger.info(f"Task {task_id} is in state {task_info.status}")
-
-            # First try to remove from queue if it's there
-            # This avoids the race condition by attempting removal directly
-            # rather than checking first, then removing later
-            task_removed = await self.queue.remove_task(task_id)
+            logger.info(f"Task {task_id} is in state {task_status}")
             
-            if task_removed:
-                # Task was in the queue and successfully removed
-                logger.info(f"Task {task_id} was queued and has been removed from queue.")
+            # Track if the task is currently running
+            task_running = (task_status == TaskStatus.RUNNING)
+            
+            # If task is PENDING or similar non-running state, we can cancel it directly
+            if not task_running:
+                # First try to remove from queue to prevent it from starting
+                task_removed = await self.queue.remove_task(task_id)
+                
+                # Mark it as cancelled while still holding the lock
                 await task_info.mark_cancelled("Task cancelled before execution")
-                logger.info(f"Cancelled queued task {task_id}")
+                logger.info(f"Cancelled {'queued' if task_removed else 'pending'} task {task_id}")
 
-                # Notify futures
+                # Notify futures (still holding the lock)
                 await self.future_manager.set_exception(
                     task_id,
                     TaskError("Task cancelled", task_id=task_id)
                 )
-                return True
+                cancel_result = True
 
-            # For running tasks, we need to identify if it's actually running
-            # and prepare it for cancellation
-            is_running = task_info.status == TaskStatus.RUNNING
-
-        # 3. Handle running tasks outside the lock to avoid deadlocks
-        if is_running:
-            # Try to cancel the actual running task in the worker pool
-            # This doesn't modify task state, just cancels the asyncio task
-            task_cancelled = await self.worker_pool.cancel_running_task(task_id)
-
-            # 4. Re-acquire the lock to update task state
+        # For running tasks, special handling with the worker pool is needed
+        if task_running:
+            # Cancel the running task in the worker pool
+            worker_cancelled = await self.worker_pool.cancel_running_task(task_id)
+            
+            # Now re-acquire the lock to update the task state
             async with self.tasks_lock:
+                # Get the task info again - it might have changed
                 task_info = self.tasks.get(task_id)
-                # Task might have completed while we were trying to cancel it
+                
+                # Task might have completed while we were cancelling
                 if not task_info or task_info.is_terminal_state():
-                    logger.info(f"Task {task_id} already completed or was removed.")
-                    return False
+                    logger.info(f"Task {task_id} completed while cancellation was in progress.")
+                    cancel_result = False
+                else:
+                    # Mark the task as cancelled
+                    await task_info.mark_cancelled(
+                        "Task execution cancelled" if worker_cancelled else "Task cancellation requested"
+                    )
+                    logger.info(f"Marked running task {task_id} as cancelled")
 
-                # Mark the task as cancelled
-                await task_info.mark_cancelled(
-                    "Task execution cancelled" if task_cancelled else "Task cancelled by request"
-                )
-                logger.info(f"Marked task {task_id} as cancelled")
-
-                # Notify futures
-                await self.future_manager.set_exception(
-                    task_id,
-                    TaskError("Task cancelled", task_id=task_id)
-                )
-                return True
-        else:
-            # Task exists but is not running or queued (e.g., PENDING)
-            # Re-acquire the lock to update its state
-            async with self.tasks_lock:
-                task_info = self.tasks.get(task_id)
-                # Double-check if it still exists and is not in terminal state
-                if not task_info or task_info.is_terminal_state():
-                    logger.info(f"Task {task_id} already completed or was removed.")
-                    return False
-
-                # Mark it as cancelled
-                await task_info.mark_cancelled("Task cancelled before execution")
-                logger.info(f"Cancelled pending task {task_id}")
-
-                # Notify futures
-                await self.future_manager.set_exception(
-                    task_id,
-                    TaskError("Task cancelled", task_id=task_id)
-                )
-                return True
+                    # Notify futures
+                    await self.future_manager.set_exception(
+                        task_id,
+                        TaskError("Task cancelled", task_id=task_id)
+                    )
+                    cancel_result = True
+        
+        return cancel_result
 
     async def _cleanup_loop(self) -> None:
         """Periodically clean up old completed tasks"""

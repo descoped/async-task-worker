@@ -36,16 +36,16 @@ class ProgressUpdateStrategy:
     Instead of acquiring a lock for every update, this class implements
     a rate-limited approach to progress tracking.
     """
-    
-    def __init__(self, 
-                min_update_interval: float = 0.1,  # Minimum time between updates in seconds
-                min_progress_change: float = 0.02, # Minimum change in progress to trigger an update
-                ):
+
+    def __init__(self,
+                 min_update_interval: float = 0.1,  # Minimum time between updates in seconds
+                 min_progress_change: float = 0.02,  # Minimum change in progress to trigger an update
+                 ):
         self.min_update_interval = min_update_interval
         self.min_progress_change = min_progress_change
         self.last_update_time = 0.0
         self.last_progress_value = 0.0
-        
+
     def should_update(self, new_progress: float) -> bool:
         """
         Determine if a progress update should be processed.
@@ -61,26 +61,26 @@ class ProgressUpdateStrategy:
         current_time = time.time()
         time_since_update = current_time - self.last_update_time
         progress_change = abs(new_progress - self.last_progress_value)
-        
+
         # Always update if this is the first update (time=0)
         if self.last_update_time == 0.0:
             self.last_update_time = current_time
             self.last_progress_value = new_progress
             return True
-            
+
         # Always update on completion (progress=1.0)
         if new_progress == 1.0 and self.last_progress_value != 1.0:
             self.last_update_time = current_time
             self.last_progress_value = new_progress
             return True
-            
+
         # Check if enough time has passed or enough progress has been made
-        if (time_since_update >= self.min_update_interval or 
+        if (time_since_update >= self.min_update_interval or
                 progress_change >= self.min_progress_change):
             self.last_update_time = current_time
             self.last_progress_value = new_progress
             return True
-            
+
         return False
 
 
@@ -100,13 +100,13 @@ class TaskInfo(BaseModel):
     error: Optional[str] = None
     progress: float = 0.0
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    
+
     # Lock for synchronized state changes
     _lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
-    
+
     # Progress update throttling
     _progress_strategy: ProgressUpdateStrategy = PrivateAttr(default_factory=ProgressUpdateStrategy)
-    
+
     # In-progress value for atomic updates
     _current_progress: float = PrivateAttr(default=0.0)
 
@@ -149,10 +149,10 @@ class TaskInfo(BaseModel):
             progress = 0.0
         elif progress > 1.0:
             progress = 1.0
-            
+
         # Update the atomic progress value
         self._current_progress = progress
-        
+
         # If the update strategy says we should update the displayed progress,
         # then update the actual progress field which triggers validation
         if self._progress_strategy.should_update(progress):
@@ -175,12 +175,13 @@ class TaskInfo(BaseModel):
         """
         async with self._lock:
             if self.is_terminal_state():
-                logger.warning(f"Task {self.id} is already in a terminal state ({self.status}), cannot mark as completed.")
+                logger.warning(
+                    f"Task {self.id} is already in a terminal state ({self.status}), cannot mark as completed.")
                 return
             self.status = TaskStatus.COMPLETED
             self.completed_at = datetime.now()
             self.result = result
-            
+
             # Ensure progress is set to 100% on completion
             self._current_progress = 1.0
             self.progress = 1.0
@@ -219,7 +220,7 @@ class TaskInfo(BaseModel):
         """
         # Use the most up-to-date progress value, even if not yet in .progress
         current_progress = max(self.progress, self._current_progress)
-        
+
         return {
             "id": self.id,
             "status": self.status.value,
@@ -231,7 +232,7 @@ class TaskInfo(BaseModel):
             "progress": current_progress,
             "metadata": self.metadata,
         }
-        
+
     def get_current_progress(self) -> float:
         """
         Get the most up-to-date progress value, including any pending updates.

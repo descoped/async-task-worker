@@ -10,8 +10,8 @@ import logging
 import weakref
 from typing import Self, Set
 
-from async_task_worker.error_handler import TaskCancellationError, TaskExecutionError
-from async_task_worker.task_status import TaskInfo, TaskStatus
+from async_task_worker.exceptions import TaskCancellationError, TaskExecutionError
+from async_task_worker.status import TaskInfo, TaskStatus
 
 logger = logging.getLogger(__name__)
 

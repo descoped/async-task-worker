@@ -10,9 +10,9 @@ import logging
 import time
 from typing import Callable, Dict, List, Optional, Self, Any, Awaitable, TypeVar
 
-from async_task_worker.task_executor import TaskExecutor
-from async_task_worker.task_queue import TaskQueue
-from async_task_worker.task_status import TaskInfo
+from async_task_worker.executor import TaskExecutor
+from async_task_worker.queue import TaskQueue
+from async_task_worker.status import TaskInfo
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +295,9 @@ class WorkerPool:
         
         This method focuses only on finding and canceling the actual running task
         in asyncio. Task state updates are handled through callbacks.
+        
+        The cancellation process is atomic and thread-safe, ensuring that
+        the task state is checked and modified under a lock to prevent race conditions.
 
         Args:
             task_id: ID of the task to cancel
@@ -304,16 +307,29 @@ class WorkerPool:
         """
         logger.info(f"Worker pool attempting to cancel running task {task_id}")
 
-        # Only use the running tasks lock to find and cancel the worker task
         async with self._running_tasks_lock:
+            # Check if task exists in our tracking dictionaries
             worker_task = self._task_to_worker.get(task_id)
             if not worker_task:
-                logger.warning(f"Worker task for {task_id} not found in running tasks.")
+                logger.warning(f"Worker task for {task_id} not found in running tasks")
+                return False
+                
+            # Check if task is already done before attempting to cancel
+            if worker_task.done():
+                logger.info(f"Task {task_id} is already completed, cannot cancel")
+                # Remove from tracking
+                if task_id in self._running_tasks:
+                    del self._running_tasks[task_id]
+                if task_id in self._task_to_worker:
+                    del self._task_to_worker[task_id]
                 return False
 
-            # Cancel the running task
+            # Task exists and is running - cancel it
             logger.info(f"Cancelling running task {task_id}")
             worker_task.cancel()
+            
+            # Task references are cleaned up in the worker task's finally block
+            
             return True
 
     @property
