@@ -303,6 +303,15 @@ class AsyncTaskWorker:
         """
         async with self.tasks_lock:
             return self.tasks.get(task_id)
+            
+    def get_cache(self) -> AsyncCacheAdapter:
+        """
+        Get the cache adapter instance.
+        
+        Returns:
+            The cache adapter instance
+        """
+        return self.cache
 
     async def get_all_tasks(
             self,
