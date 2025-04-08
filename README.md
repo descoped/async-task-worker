@@ -525,8 +525,7 @@ worker = AsyncTaskWorker(
     cache_enabled=True,        # Enable the cache
     cache_ttl=3600,            # Default time-to-live: 1 hour (in seconds)
     cache_max_size=1000,       # Maximum number of entries
-    validate_keys=True,        # Enable validation of cache keys (optional)
-    cleanup_interval=900       # Cleanup interval for stale mappings (15 min)
+    cache_cleanup_interval=900 # Cleanup interval for stale mappings (15 min)
 )
 
 # Disable cache globally but allow per-task override
@@ -592,7 +591,7 @@ cache_adapter = AsyncCacheAdapter(
     max_serialized_size=5_242_880,  # 5MB max serialized size
     validate_keys=True,        # Validate cache keys
     cleanup_interval=900,      # Cleanup every 15 minutes
-    redis_adapter=redis_adapter # Use Redis adapter
+    adapter=redis_adapter      # Use Redis adapter
 )
 
 # Then pass to AsyncTaskWorker
@@ -751,6 +750,7 @@ The `async_cache` package provides several cache adapters that can be used with 
 ```python
 # Using Memory Adapter (default)
 from async_cache.adapters import MemoryCacheAdapter
+from async_task_worker import AsyncCacheAdapter
 
 memory_adapter = MemoryCacheAdapter(max_size=10000)
 cache_adapter = AsyncCacheAdapter(adapter=memory_adapter)
