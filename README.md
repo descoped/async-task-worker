@@ -24,6 +24,7 @@ pip install async-task-worker
 - **API Integration**: Ready-to-use FastAPI router for task management
 - **Modular Structure**: Clean, consistent module organization with a logical structure
 
+
 ## Sequence Diagrams
 
 - [Task Registry Sequence Diagram](https://github.com/descoped/async-task-worker/blob/master/docs/Task%20Registry%20Sequence%20Diagram.mmd)
@@ -31,6 +32,7 @@ pip install async-task-worker
 - [Task Cache Sequence Diagram](https://github.com/descoped/async-task-worker/blob/master/docs/Task%20Cache%20Sequence%20Diagram.mmd)
 - [Task Worker API Sequence Diagram](https://github.com/descoped/async-task-worker/blob/master/docs/Task%20Worker%20API%20Sequence%20Diagram.mmd)
 - [AsyncTaskWorker Class Diagram](https://github.com/descoped/async-task-worker/blob/master/docs/AsyncTaskWorker%20Class%20Diagram.mmd)
+- [EventManager Sequence Diagram](https://github.com/descoped/async-task-worker/blob/master/docs/EventManager%20Sequence%20Diagram.mmd)
 
 
 ## How It Works
@@ -1132,6 +1134,467 @@ async def get_cached_result(task_worker, func_name, task_id):
         # Fall back to retrieving via task info
         return await handle_task_not_in_cache(task_worker, task_id)
 ```
+
+## Event System Integration
+
+The async_task_worker library can be integrated with the `async_events` package to create a reactive system where task state changes publish events that can be consumed by subscribers. This enables building event-driven architectures with real-time notifications and monitoring.
+
+### Features
+
+- **Event-driven Architecture**: Task state changes generate events that subscribers can react to
+- **Real-time Notifications**: Get immediate updates when tasks change state
+- **Filtered Event Streams**: Subscribe to events for specific task groups
+- **Historical Event Access**: Query recent events even after they occurred
+- **Server-Sent Events Support**: Compatible with SSE for web client integration
+
+### Getting Started with Events
+
+```python
+import asyncio
+from async_task_worker import AsyncTaskWorker, task
+from async_events import EventManager, GroupFilter, EventSubscription
+
+# Global event manager instance
+event_manager = EventManager()
+
+# Configure task worker to publish events
+async def configure_task_worker_events(worker):
+    # Start the event manager
+    await event_manager.start()
+    
+    async def monitor_worker():
+        while True:
+            # Get all tasks in terminal states
+            terminal_tasks = await worker.get_all_tasks(
+                status=["completed", "failed", "cancelled"]
+            )
+            
+            for task_info in terminal_tasks:
+                # Check if we've already published an event for this task
+                if not event_manager.is_processed(task_info.id):
+                    # Build event data based on task state
+                    event_data = {
+                        "task_id": task_info.id,
+                        "status": task_info.status,
+                        "timestamp": asyncio.get_event_loop().time()
+                    }
+                    
+                    # Add status-specific data
+                    if task_info.status == "completed":
+                        event_data["result"] = task_info.result
+                    elif task_info.status == "failed":
+                        event_data["error"] = task_info.error
+                    
+                    # Get group ID from metadata or use task_id as fallback
+                    group_id = task_info.metadata.get("group_id", task_info.id)
+                    
+                    # Publish the event
+                    await event_manager.publish_event(
+                        event_id=task_info.id,
+                        group_id=group_id,
+                        event_data=event_data
+                    )
+            
+            # Short sleep to avoid CPU spinning
+            await asyncio.sleep(0.1)
+    
+    # Start the monitoring task
+    monitor_task = asyncio.create_task(monitor_worker())
+    return monitor_task
+
+# Define a task that reports progress events
+@task("computation_task")
+async def computation_task(data, computation_id, delay=0.5):
+    """Task that reports progress via events."""
+    result = {"status": "processing", "computation_id": computation_id}
+    total_steps = 5
+    
+    for step in range(1, total_steps + 1):
+        # Simulate work
+        await asyncio.sleep(delay)
+        
+        # Update progress
+        progress = step / total_steps
+        
+        # Publish step completion event
+        event_data = {
+            "computation_id": computation_id,
+            "step": step,
+            "total_steps": total_steps,
+            "progress": progress
+        }
+        
+        await event_manager.publish_event(
+            event_id=f"{computation_id}_step_{step}",
+            group_id=computation_id,
+            event_data=event_data
+        )
+    
+    # Update final status
+    result["status"] = "completed"
+    
+    # Publish completion event
+    await event_manager.publish_event(
+        event_id=f"{computation_id}_completed",
+        group_id=computation_id,
+        event_data={
+            "computation_id": computation_id,
+            "status": "completed",
+            "result": result
+        }
+    )
+    
+    return result
+
+# Example of subscribing to events
+async def subscribe_to_task_events(computation_id):
+    async with EventSubscription(computation_id) as subscription:
+        # Collect events until we see a completion event
+        events = await subscription.collect_events(
+            until_condition=lambda e: e.get("status") == "completed",
+            timeout=30.0
+        )
+        
+        # Process collected events
+        return events
+```
+
+### Complete Example with Web Integration
+
+Here's a full example showing how to integrate task events with a web application:
+
+```python
+import asyncio
+import uuid
+from fastapi import FastAPI, WebSocket
+from contextlib import asynccontextmanager
+from async_task_worker import AsyncTaskWorker, task, create_task_worker_router
+from async_events import event_manager, EventSubscription
+
+# Create worker
+worker = AsyncTaskWorker(max_workers=5)
+
+# Configure the event system integration
+event_monitor_task = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global event_monitor_task
+    # Start worker
+    await worker.start()
+    
+    # Start event manager
+    await event_manager.start()
+    
+    # Configure event monitoring
+    event_monitor_task = await configure_task_worker_events(worker)
+    
+    yield
+    
+    # Cleanup
+    if event_monitor_task:
+        event_monitor_task.cancel()
+        try:
+            await event_monitor_task
+        except asyncio.CancelledError:
+            pass
+    
+    await event_manager.stop()
+    await worker.stop()
+
+# Create FastAPI app
+app = FastAPI(lifespan=lifespan)
+
+# Include the task worker API
+app.include_router(create_task_worker_router(worker))
+
+# WebSocket endpoint for real-time task events
+@app.websocket("/ws/tasks/{group_id}")
+async def websocket_endpoint(websocket: WebSocket, group_id: str):
+    await websocket.accept()
+    
+    # Subscribe to events for this group
+    subscriber_id, queue = await event_manager.subscribe(group_id)
+    
+    try:
+        # Get historical events first
+        filter_obj = GroupFilter(group_id=group_id)
+        historical_events = await event_manager.get_recent_events(filter_obj)
+        
+        # Send historical events
+        for event in historical_events:
+            await websocket.send_json(event)
+        
+        # Listen for new events
+        while True:
+            # Wait for next event
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=30)
+                await websocket.send_json(event)
+            except asyncio.TimeoutError:
+                # Send ping to keep connection alive
+                await websocket.send_json({"type": "ping"})
+    except Exception as e:
+        print(f"WebSocket error: {str(e)}")
+    finally:
+        # Unsubscribe when connection closes
+        await event_manager.unsubscribe(subscriber_id)
+
+# API endpoint to start a computation task
+@app.post("/computations")
+async def start_computation(data: dict):
+    computation_id = str(uuid.uuid4())
+    
+    # Add task to worker with group_id in metadata
+    task_id = await worker.add_task(
+        computation_task,
+        data=data,
+        computation_id=computation_id,
+        metadata={"group_id": computation_id}
+    )
+    
+    return {
+        "computation_id": computation_id,
+        "task_id": task_id,
+        "websocket_url": f"/ws/tasks/{computation_id}"
+    }
+
+# Frontend JavaScript to connect to the WebSocket
+"""
+// Connect to the WebSocket for task events
+function connectToTaskEvents(computationId) {
+    const socket = new WebSocket(`ws://${window.location.host}/ws/tasks/${computationId}`);
+    
+    socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        // Ignore ping messages
+        if (data.type === 'ping') return;
+        
+        // Update UI based on event type
+        if (data.status === 'completed') {
+            // Show completion
+            showResult(data.result);
+        } else if (data.progress !== undefined) {
+            // Update progress bar
+            updateProgress(data.progress);
+        }
+    };
+    
+    return socket;
+}
+
+// Start a new computation and connect to its events
+async function startComputation(data) {
+    const response = await fetch('/computations', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    });
+    
+    const result = await response.json();
+    
+    // Connect to WebSocket for real-time updates
+    const socket = connectToTaskEvents(result.computation_id);
+    
+    return {
+        computationId: result.computation_id,
+        taskId: result.task_id,
+        socket: socket
+    };
+}
+"""
+```
+
+### Advanced Event Patterns
+
+#### Reactive Task Monitoring Dashboard
+
+```python
+async def monitor_all_tasks(worker, dashboard_id):
+    """Create a real-time dashboard of all tasks."""
+    # Subscribe to all task events (using special group)
+    subscriber_id, queue = await event_manager.subscribe("all_tasks")
+    
+    # Task to forward all task events to the dashboard
+    async def forward_events():
+        while True:
+            event = await queue.get()
+            # Update dashboard UI with event data
+            await update_dashboard(dashboard_id, event)
+    
+    # Monitor task events from worker
+    async def process_task_events():
+        while True:
+            tasks = await worker.get_all_tasks()
+            
+            for task in tasks:
+                # Create event data from task info
+                event_data = {
+                    "task_id": task.id,
+                    "status": task.status,
+                    "progress": task.progress,
+                    "created_at": task.created_at.isoformat(),
+                    "type": task.metadata.get("task_type", "unknown")
+                }
+                
+                # Publish to both specific task group and all_tasks group
+                await event_manager.publish_event(
+                    event_id=f"{task.id}_{task.status}",
+                    group_id="all_tasks",  # Dashboard group
+                    event_data=event_data
+                )
+            
+            await asyncio.sleep(1)
+    
+    # Start both tasks
+    event_task = asyncio.create_task(forward_events())
+    monitor_task = asyncio.create_task(process_task_events())
+    
+    return event_task, monitor_task
+```
+
+#### Chained Task Processing with Events
+
+```python
+@task("initial_processor")
+async def initial_processor(data):
+    result = process_initial_data(data)
+    
+    # Publish completion event
+    await event_manager.publish_event(
+        event_id=f"initial_{data['id']}",
+        group_id=data["id"],
+        event_data={
+            "stage": "initial",
+            "id": data["id"],
+            "result": result
+        }
+    )
+    
+    return result
+
+@task("secondary_processor")
+async def secondary_processor(initial_result):
+    # Process the result from the initial task
+    final_result = process_final_data(initial_result)
+    
+    # Publish completion event
+    await event_manager.publish_event(
+        event_id=f"secondary_{initial_result['id']}",
+        group_id=initial_result["id"],
+        event_data={
+            "stage": "secondary",
+            "id": initial_result["id"],
+            "result": final_result
+        }
+    )
+    
+    return final_result
+
+# Event-driven task chain
+async def process_data_chain(data):
+    data_id = data["id"]
+    
+    # Start a subscription for this data chain
+    async with EventSubscription(data_id) as subscription:
+        # Start initial processing
+        initial_task_id = await worker.add_task(
+            initial_processor,
+            data=data,
+            metadata={"group_id": data_id}
+        )
+        
+        # Wait for initial processing event
+        initial_event = await subscription.wait_for_completion_event(timeout=30.0)
+        
+        if not initial_event:
+            raise TimeoutError("Initial processing timed out")
+        
+        # Start secondary processing with the result from the initial task
+        secondary_task_id = await worker.add_task(
+            secondary_processor,
+            initial_result=initial_event["result"],
+            metadata={"group_id": data_id}
+        )
+        
+        # Wait for secondary processing event
+        secondary_event = await subscription.wait_for_completion_event(timeout=30.0)
+        
+        if not secondary_event:
+            raise TimeoutError("Secondary processing timed out")
+        
+        return secondary_event["result"]
+```
+
+### Server-Sent Events (SSE) Integration
+
+For web applications, you can use the built-in SSE client to stream task events to browsers:
+
+```python
+from fastapi import FastAPI, Request
+from fastapi.responses import StreamingResponse
+from async_events import event_manager
+
+app = FastAPI()
+
+@app.get("/events/{task_id}")
+async def event_stream(request: Request, task_id: str):
+    async def generate_events():
+        # Subscribe to events for this task
+        subscriber_id, queue = await event_manager.subscribe(task_id)
+        
+        try:
+            # Send SSE headers
+            yield "event: connected\ndata: {\"task_id\":\"" + task_id + "\"}\n\n"
+            
+            # Stream events until client disconnects
+            while True:
+                if await request.is_disconnected():
+                    break
+                
+                try:
+                    # Wait for next event with timeout for keep-alive
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                    
+                    # Format as SSE
+                    event_name = event.get("status", "update")
+                    event_data = json.dumps(event)
+                    yield f"event: {event_name}\ndata: {event_data}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keep-alive comment
+                    yield ": ping\n\n"
+        finally:
+            # Unsubscribe when client disconnects
+            await event_manager.unsubscribe(subscriber_id)
+    
+    return StreamingResponse(
+        generate_events(),
+        media_type="text/event-stream"
+    )
+```
+
+### Configuration Options
+
+The event system provides several configuration options:
+
+```python
+# Create event manager with custom settings
+custom_event_manager = EventManager(
+    result_ttl=1800,  # Keep events in memory for 30 minutes
+)
+
+# Start the event manager
+await custom_event_manager.start()
+
+# Clean up when done
+await custom_event_manager.stop()
+```
+
+By integrating the async_task_worker with the event system, you can build real-time dashboards, notification systems, and event-driven processing chains that react immediately to task state changes.
+
 
 ## License
 

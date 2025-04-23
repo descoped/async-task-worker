@@ -1,0 +1,65 @@
+sequenceDiagram
+    participant Client as Client
+    participant EM as EventManager
+    participant Subscriber as Subscriber
+    participant WorkerTasks as WorkerTasks
+    participant Filter as GroupFilter
+
+    %% Initialization and lifecycle
+    Client->>EM: __init__(result_ttl=300)
+    Note over EM: Initialize EventManager with TTL
+    Client->>EM: start()
+    activate EM
+    Note over EM: Start cleanup_task
+
+    %% Subscription workflow
+    Client->>EM: subscribe(group_id="computation_123")
+    activate EM
+    EM-->>Client: subscriber_id, queue
+    deactivate EM
+    Note over Client, EM: Client gets subscriber_id and asyncio.Queue
+
+    %% Event publishing workflow
+    WorkerTasks->>EM: publish_event(event_id, group_id, event_data)
+    activate EM
+    EM->>EM: Check if event already processed
+    EM->>EM: Store event in recent_results with timestamp
+    Note over EM: Find subscribers for group_id
+
+    loop For each subscriber
+        EM->>Subscriber: Put event on subscriber queue
+    end
+    EM-->>WorkerTasks: notify_count
+    deactivate EM
+
+    %% Subscriber receiving events
+    Subscriber->>Subscriber: await queue.get()
+    Note over Subscriber: Process event
+
+    %% Querying historical events
+    Client->>Filter: new GroupFilter(group_id="computation_123")
+    Client->>EM: get_recent_events(filter)
+    activate EM
+    EM->>Filter: match(event_data)
+    Filter-->>EM: True/False
+    EM-->>Client: List of matching events
+    deactivate EM
+
+    %% Unsubscribe workflow
+    Client->>EM: unsubscribe(subscriber_id)
+    activate EM
+    EM->>EM: Remove subscriber from subscriptions
+    deactivate EM
+
+    %% Background cleanup
+    loop Every 60 seconds while running
+        EM->>EM: Clean up stale results (older than TTL)
+        EM->>EM: Clear processed_tasks if too large
+        EM->>EM: Remove empty group subscriptions
+    end
+
+    %% Shutdown
+    Client->>EM: stop()
+    activate EM
+    EM->>EM: Cancel cleanup_task
+    deactivate EM
