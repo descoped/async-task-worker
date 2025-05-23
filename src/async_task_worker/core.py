@@ -14,7 +14,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Self, TypeVar
 
 from async_task_worker.adapters.cache_adapter import AsyncCacheAdapter
 from async_task_worker.exceptions import TaskError
-from async_task_worker.executor import TaskExecutor
+from async_task_worker.executor import TaskExecutor, CacheManager
 from async_task_worker.futures import TaskFutureManager
 from async_task_worker.pool import WorkerPool
 from async_task_worker.queue import TaskQueue
@@ -46,7 +46,7 @@ class AsyncTaskWorker:
             cache_enabled: bool = False,
             cache_ttl: Optional[int] = 3600,  # 1 hour default
             cache_max_size: Optional[int] = 1000,
-            cache_adapter: Optional[AsyncCacheAdapter] = None,
+            cache_adapter: Optional[CacheManager] = None,
             cache_cleanup_interval: int = 900,  # 15 minutes default
             max_queue_size: Optional[int] = None,
             task_retention_days: Optional[int] = 7,
@@ -594,7 +594,7 @@ class AsyncTaskWorker:
                 logger.warning(f"Task {task_id} not found for cancellation.")
                 return False
 
-            # Store the current status for decision making
+            # Store the current status for decision-making
             task_status = task_info.status
 
             # If task is already in a terminal state, we're done
