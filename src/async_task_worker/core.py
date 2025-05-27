@@ -267,23 +267,40 @@ class AsyncTaskWorker:
         if cache_ttl is not None:
             kwargs["cache_ttl"] = cache_ttl
 
-        # For caching, if task_id is provided and the cache is being used,
-        # ensure entry_id is a composite of function name and task_id for reliable caching
-        if use_cache and self.cache.enabled and hasattr(self.cache, 'generate_entry_id'):
-            # We store the original task_id in metadata to keep track of it
-            if metadata is None:
-                # noinspection PyUnusedLocal
-                metadata = {}
+        # For caching, we need to decide between normal caching (function+args based) 
+        # and task-specific caching (task_id based for invalidation purposes)
+        if use_cache and self.cache.enabled:
+            # For normal caching, we should NOT include task_id in the cache key
+            # This allows tasks with same function and arguments to share cache entries
+            # Only use task_id for reverse mapping/invalidation purposes
+            if hasattr(self.cache, 'generate_entry_id'):
+                # We store the original task_id in metadata to keep track of it
+                if metadata is None:
+                    metadata = {}
 
-            # Generate a composite entry ID for cache operations
-            # Make sure task_id is a string
-            safe_task_id = str(task_id) if task_id is not None else None
-            entry_id = self.cache.generate_entry_id(task_func.__name__, safe_task_id)
+                # Generate a composite entry ID for reverse mapping only
+                # This is used for cache invalidation by task_id
+                safe_task_id = str(task_id) if task_id is not None else None
+                entry_id = self.cache.generate_entry_id(task_func.__name__, safe_task_id)
 
-            # The task_id in kwargs is what's used for entry_id by the executor
-            kwargs["_cache_entry_id"] = entry_id
+                # The task_id in kwargs is what's used for entry_id by the executor for reverse mapping
+                kwargs["_cache_entry_id"] = entry_id
 
-            logger.debug(f"Generated composite cache entry ID: {entry_id} for task {task_id}")
+                logger.debug(f"Generated composite cache entry ID: {entry_id} for task {task_id}")
+            
+            # For the actual cache key, use a function that only considers function name and arguments
+            # This ensures tasks with same function and args share cache entries regardless of task_id
+            from async_cache.key_utils import compose_key_functions, extract_key_component
+            
+            # Create a cache key function that only uses function name and arguments
+            normal_cache_key_fn = compose_key_functions(
+                extract_key_component("func_name"),
+                extract_key_component("args"),
+                extract_key_component("kwargs")
+            )
+            
+            # Store the normal cache key function for the executor to use
+            kwargs["_normal_cache_key_fn"] = normal_cache_key_fn
 
         # Add to queue with priority - outside the lock
         await self.queue.put(priority, task_id, task_func, args, kwargs, effective_timeout)
@@ -387,8 +404,17 @@ class AsyncTaskWorker:
             if result:
                 return True
 
-        # Try regular invalidation without composite keys
-        result = await self.cache.invalidate(func_name, args, kwargs)
+        # Try regular invalidation using the same cache key function as caching
+        from async_cache.key_utils import compose_key_functions, extract_key_component
+        
+        # Create the same cache key function that's used for caching
+        normal_cache_key_fn = compose_key_functions(
+            extract_key_component("func_name"),
+            extract_key_component("args"),
+            extract_key_component("kwargs")
+        )
+        
+        result = await self.cache.invalidate(func_name, args, kwargs, cache_key_fn=normal_cache_key_fn)
         if result:
             return True
 

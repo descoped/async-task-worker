@@ -240,10 +240,18 @@ class WorkerPool:
             except Exception as e:
                 logger.error(f"Error in task start callback for {task_id}: {str(e)}")
 
+        # Create completion callback that will be called for both cached and non-cached results
+        async def completion_callback(completed_task_id: str, task_result: Any) -> None:
+            if self.on_task_complete:
+                try:
+                    await self.on_task_complete(completed_task_id, task_info, task_result)
+                except Exception as ex:
+                    logger.error(f"Error in task complete callback for {completed_task_id}: {str(ex)}")
+
         # Execute the task
         execution_task = asyncio.create_task(
             self.task_executor.execute_task(
-                task_id, None, task_func, task_args, task_kwargs, timeout
+                task_id, None, task_func, task_args, task_kwargs, timeout, completion_callback
             )
         )
         execution_task.set_name(f"exec_{task_id}")
@@ -254,14 +262,9 @@ class WorkerPool:
             self._task_to_worker[task_id] = execution_task
 
         try:
+            # noinspection PyUnusedLocal
             result = await execution_task
-
-            # Notify task completed
-            if self.on_task_complete:
-                try:
-                    await self.on_task_complete(task_id, task_info, result)
-                except Exception as e:
-                    logger.error(f"Error in task complete callback for {task_id}: {str(e)}")
+            # Note: completion callback is now handled inside the executor for both cached and non-cached results
 
         except asyncio.CancelledError:
             logger.info(f"Task {task_id} execution cancelled")

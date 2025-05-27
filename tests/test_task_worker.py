@@ -297,6 +297,78 @@ async def test_task_caching(worker):
 
 
 @pytest.mark.asyncio
+async def test_cached_task_completion_callbacks(worker):
+    """Test that cached tasks trigger completion callbacks just like non-cached tasks"""
+    completion_calls = []
+    original_pool_callback = worker.worker_pool.on_task_complete
+
+    # Monkey patch the pool's completion callback to track calls
+    async def tracking_pool_callback(task_id, task_info, result):
+        completion_calls.append((task_id, result))
+        if original_pool_callback:
+            await original_pool_callback(task_id, task_info, result)
+
+    worker.worker_pool.on_task_complete = tracking_pool_callback
+
+    try:
+        # Execute task once to populate cache
+        args = (0.01, "cached_callback_test")
+        first_id = await worker.add_task(fast_task, *args)
+        assert await wait_for_status(worker, first_id, TaskStatus.COMPLETED, timeout=2.0)
+
+        # Verify first task triggered completion callback
+        assert len(completion_calls) == 1
+        assert completion_calls[0][0] == first_id
+        assert completion_calls[0][1]["value"] == "cached_callback_test"
+
+        # Execute same task again with same args (should use cache)
+        second_id = await worker.add_task(fast_task, *args)
+        assert await wait_for_status(worker, second_id, TaskStatus.COMPLETED, timeout=0.5)
+
+        # Verify second task (cached) also triggered completion callback
+        assert len(completion_calls) == 2
+        assert completion_calls[1][0] == second_id
+        assert completion_calls[1][1]["value"] == "cached_callback_test"
+
+        # Verify both tasks have same result but different IDs
+        task_info_1 = await worker.get_task_info(first_id)
+        task_info_2 = await worker.get_task_info(second_id)
+        
+        assert task_info_1.result == task_info_2.result
+        assert task_info_1.status == TaskStatus.COMPLETED
+        assert task_info_2.status == TaskStatus.COMPLETED
+        assert first_id != second_id
+
+    finally:
+        # Restore original callback
+        worker.worker_pool.on_task_complete = original_pool_callback
+
+
+@pytest.mark.asyncio 
+async def test_cached_task_futures_completion(worker):
+    """Test that futures are properly completed for cached tasks"""
+    # Execute task once to populate cache
+    args = (0.01, "cached_future_test")
+    first_id = await worker.add_task(fast_task, *args)
+    assert await wait_for_status(worker, first_id, TaskStatus.COMPLETED, timeout=2.0)
+
+    # Execute same task again with same args (should use cache)
+    second_id = await worker.add_task(fast_task, *args)
+    
+    # Get future for cached task
+    future = await worker.get_task_future(second_id)
+    
+    # Future should resolve with cached result
+    result = await future
+    assert result["value"] == "cached_future_test"
+    
+    # Task status should be completed
+    task_info = await worker.get_task_info(second_id)
+    assert task_info.status == TaskStatus.COMPLETED
+    assert task_info.result == result
+
+
+@pytest.mark.asyncio
 async def test_cache_invalidation(worker):
     """Test that cache invalidation works"""
     # Execute task
@@ -563,16 +635,16 @@ async def test_task_callback_parameters():
     
     # Create a subclass of AsyncTaskWorker that captures task_info
     class CallbackTestWorker(AsyncTaskWorker):
-        async def _on_task_started(self, task_id, task_info, _):
-            mock_results["start_task_id"] = task_id
-            mock_results["start_task_info"] = task_info
-            await super()._on_task_started(task_id, task_info, _)
-        
-        async def _on_task_completed(self, task_id, task_info, result):
-            mock_results["complete_task_id"] = task_id
-            mock_results["complete_task_info"] = task_info
+        async def _on_task_started(self, task_id_, task_info_, _):
+            mock_results["start_task_id"] = task_id_
+            mock_results["start_task_info"] = task_info_
+            await super()._on_task_started(task_id_, task_info_, _)
+
+        async def _on_task_completed(self, task_id_, task_info_, result):
+            mock_results["complete_task_id"] = task_id_
+            mock_results["complete_task_info"] = task_info_
             mock_results["result"] = result
-            await super()._on_task_completed(task_id, task_info, result)
+            await super()._on_task_completed(task_id_, task_info_, result)
     
     # Create worker with our instrumented callbacks
     worker = CallbackTestWorker(
@@ -662,24 +734,24 @@ async def test_real_task_execution_callback_flow():
     
     # Create a custom AsyncTaskWorker that tracks all callback invocations
     class CallbackTrackingWorker(AsyncTaskWorker):
-        async def _on_task_started(self, task_id, task_info, _):
+        async def _on_task_started(self, task_id_, task_info_, _):
             callback_sequence.append({
                 "event": "started",
-                "task_id": task_id,
-                "task_info_type": type(task_info).__name__ if task_info else None,
-                "task_info": task_info
+                "task_id": task_id_,
+                "task_info_type": type(task_info_).__name__ if task_info_ else None,
+                "task_info": task_info_
             })
-            await super()._on_task_started(task_id, task_info, _)
+            await super()._on_task_started(task_id_, task_info_, _)
             
-        async def _on_task_completed(self, task_id, task_info, result):
+        async def _on_task_completed(self, task_id_, task_info_, result):
             callback_sequence.append({
                 "event": "completed",
-                "task_id": task_id,
-                "task_info_type": type(task_info).__name__ if task_info else None,
-                "task_info": task_info,
+                "task_id": task_id_,
+                "task_info_type": type(task_info_).__name__ if task_info_ else None,
+                "task_info": task_info_,
                 "result": result
             })
-            await super()._on_task_completed(task_id, task_info, result)
+            await super()._on_task_completed(task_id_, task_info_, result)
     
     # Create worker with our tracking callbacks
     worker = CallbackTrackingWorker(max_workers=1, worker_poll_interval=0.01)

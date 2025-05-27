@@ -78,7 +78,8 @@ class TaskExecutor:
             task_func: Callable[..., Awaitable[T]],
             args: Tuple,
             kwargs: Dict[str, Any],
-            timeout: Optional[float] = None
+            timeout: Optional[float] = None,
+            on_complete: Optional[Callable[[str, Any], Awaitable[None]]] = None
     ) -> T:
         """
         Execute a task with timeout and error handling.
@@ -90,6 +91,7 @@ class TaskExecutor:
             args: Positional arguments
             kwargs: Keyword arguments
             timeout: Optional timeout in seconds
+            on_complete: Optional callback for task completion (including cache hits)
 
         Returns:
             Task execution result
@@ -110,31 +112,35 @@ class TaskExecutor:
         # Extract cache options from kwargs if present
         use_cache: bool = kwargs.pop("use_cache", True)
         cache_ttl: Optional[int] = kwargs.pop("cache_ttl", None)
+        normal_cache_key_fn = kwargs.pop("_normal_cache_key_fn", None)
 
         # Remove special cache control parameters that should not be passed to task function
-        if "_cache_entry_id" in kwargs:
-            kwargs.pop("_cache_entry_id")
+        cache_entry_id = kwargs.pop("_cache_entry_id", task_id)
 
         # Try to get from cache if caching is enabled
         if use_cache and self.cache_manager and self.cache_manager.enabled:
             try:
                 func_name = task_func.__name__
-                # Extract custom cache entry ID and prepare cache kwargs
-                # Make a copy without progress_callback for cache key
-                function_kwargs = kwargs.copy()
-                cache_entry_id = function_kwargs.pop("_cache_entry_id", task_id)
-                cache_kwargs = {k: v for k, v in function_kwargs.items()
+                # Prepare cache kwargs - exclude progress_callback for cache key
+                cache_kwargs = {k: v for k, v in kwargs.items()
                                 if k != "progress_callback"}
 
                 cache_hit, cached_result = await self.cache_manager.get(
                     func_name,
                     args,
                     cache_kwargs,
+                    cache_key_fn=normal_cache_key_fn,
                     task_id=cache_entry_id
                 )
 
                 if cache_hit:
                     logger.info(f"Task {task_id} using cached result")
+                    # Trigger completion callback for cache hits
+                    if on_complete:
+                        try:
+                            await on_complete(task_id, cached_result)
+                        except Exception as callback_error:
+                            logger.error(f"Error in completion callback for cached task {task_id}: {str(callback_error)}")
                     return cached_result
             except Exception as e:
                 error_msg = f"Cache retrieval error for task {task_id}: {str(e)}"
@@ -195,10 +201,8 @@ class TaskExecutor:
                 try:
                     func_name = task_func.__name__
                     
-                    # Extract custom cache entry ID and prepare cache kwargs
-                    function_kwargs = kwargs.copy()
-                    cache_entry_id = function_kwargs.pop("_cache_entry_id", task_id)
-                    cache_kwargs = {k: v for k, v in function_kwargs.items()
+                    # Prepare cache kwargs - exclude progress_callback for cache key
+                    cache_kwargs = {k: v for k, v in kwargs.items()
                                     if k != "progress_callback"}
 
                     await self.cache_manager.set(
@@ -207,6 +211,7 @@ class TaskExecutor:
                         cache_kwargs,
                         result,
                         ttl=cache_ttl,
+                        cache_key_fn=normal_cache_key_fn,
                         task_id=cache_entry_id
                     )
                 except Exception as e:
@@ -224,6 +229,13 @@ class TaskExecutor:
 
             execution_time = time.time() - start_time
             logger.info(f"Task {task_id} completed successfully in {execution_time:.3f}s")
+
+            # Trigger completion callback for non-cached results
+            if on_complete:
+                try:
+                    await on_complete(task_id, result)
+                except Exception as callback_error:
+                    logger.error(f"Error in completion callback for task {task_id}: {str(callback_error)}")
 
             return result
 
