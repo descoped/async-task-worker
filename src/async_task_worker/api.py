@@ -79,6 +79,7 @@ class TaskResponse(BaseModel):
     metadata: Dict[str, Any]
     result: Optional[Any] = None
     error: Optional[str] = None
+    from_cache: bool = False
 
 
 class TaskListResponse(BaseModel):
@@ -287,6 +288,7 @@ def create_task_worker_router(
                 metadata=task_info.metadata,
                 result=task_info.result,
                 error=task_info.error,
+                from_cache=task_info.from_cache,
             )
         except Exception as e:
             # Use standardized error handling
@@ -311,6 +313,7 @@ def create_task_worker_router(
                 metadata=task_info.metadata,
                 result=task_info.result,
                 error=task_info.error,
+                from_cache=task_info.from_cache,
             )
         except Exception as e:
             raise handle_task_exception(e)
@@ -360,6 +363,7 @@ def create_task_worker_router(
                         metadata=task.metadata,
                         result=task.result,
                         error=task.error,
+                        from_cache=task.from_cache,
                     )
                     for task in tasks
                 ],

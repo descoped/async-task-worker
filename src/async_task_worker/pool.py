@@ -241,10 +241,16 @@ class WorkerPool:
                 logger.error(f"Error in task start callback for {task_id}: {str(e)}")
 
         # Create completion callback that will be called for both cached and non-cached results
-        async def completion_callback(completed_task_id: str, task_result: Any) -> None:
+        async def completion_callback(completed_task_id: str, task_result: Any, from_cache: bool) -> None:
             if self.on_task_complete:
                 try:
-                    await self.on_task_complete(completed_task_id, task_info, task_result)
+                    # Try to call with cache metadata first, fall back to old signature for backward compatibility
+                    import inspect
+                    sig = inspect.signature(self.on_task_complete)
+                    if len(sig.parameters) >= 4:  # Has from_cache parameter
+                        await self.on_task_complete(completed_task_id, task_info, task_result, from_cache)
+                    else:  # Old signature without from_cache
+                        await self.on_task_complete(completed_task_id, task_info, task_result)
                 except Exception as ex:
                     logger.error(f"Error in task complete callback for {completed_task_id}: {str(ex)}")
 

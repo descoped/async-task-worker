@@ -74,7 +74,8 @@ async def test_create_task(test_app):
         progress=0.0,
         metadata={"task_type": "test_addition"},
         result=None,
-        error=None
+        error=None,
+        from_cache=False
     ))
 
     # Submit task
@@ -122,7 +123,8 @@ async def test_get_task(test_app):
         progress=1.0,
         metadata={"task_type": "test_addition"},
         result=12,
-        error=None
+        error=None,
+        from_cache=True
     )
     worker.get_task_info = AsyncMock(return_value=task_info)
 
@@ -183,7 +185,8 @@ async def test_list_tasks(test_app):
         metadata={"task_type": "test_addition"},
         result=12,
         error=None,
-        created_at=0  # dummy value
+        created_at=0,  # dummy value
+        from_cache=True
     )
     task2 = MagicMock(
         id="task-2",
@@ -192,7 +195,8 @@ async def test_list_tasks(test_app):
         metadata={"task_type": "test_addition"},
         result=None,
         error=None,
-        created_at=0  # dummy value
+        created_at=0,  # dummy value
+        from_cache=False
     )
     # Use AsyncMock for get_all_tasks so it can be awaited.
     worker.get_all_tasks = AsyncMock(return_value=[task1, task2])
@@ -221,3 +225,59 @@ async def test_list_tasks(test_app):
     assert len(data["tasks"]) == 1
     assert data["tasks"][0]["id"] == "task-2"
     assert data["tasks"][0]["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_cache_metadata_in_api_responses(test_app):
+    """Test that cache metadata is included in API responses."""
+    client, worker = test_app
+    
+    # Test create task response includes from_cache
+    worker.add_task = AsyncMock(return_value="cached-task-id")
+    worker.get_task_info = AsyncMock(return_value=MagicMock(
+        id="cached-task-id",
+        status=TaskStatus.COMPLETED,
+        progress=1.0,
+        metadata={"task_type": "test_addition"},
+        result=15,
+        error=None,
+        from_cache=True
+    ))
+    
+    response = client.post(
+        "/api/v1/tasks",
+        json={
+            "task_type": "test_addition",
+            "params": {"a": 8, "b": 7},
+        }
+    )
+    
+    assert response.status_code == 201
+    data = response.json()
+    assert "from_cache" in data
+    assert data["from_cache"] is True
+    
+    # Test get task response includes from_cache
+    response = client.get("/api/v1/tasks/cached-task-id")
+    assert response.status_code == 200
+    data = response.json()
+    assert "from_cache" in data
+    assert data["from_cache"] is True
+    
+    # Test list tasks response includes from_cache
+    worker.get_all_tasks = AsyncMock(return_value=[MagicMock(
+        id="cached-task-id",
+        status=TaskStatus.COMPLETED,
+        progress=1.0,
+        metadata={"task_type": "test_addition"},
+        result=15,
+        error=None,
+        from_cache=True
+    )])
+    
+    response = client.get("/api/v1/tasks")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["tasks"]) == 1
+    assert "from_cache" in data["tasks"][0]
+    assert data["tasks"][0]["from_cache"] is True

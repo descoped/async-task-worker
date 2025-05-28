@@ -710,7 +710,7 @@ class AsyncTaskWorker:
             if task_id in self.tasks:
                 await self.tasks[task_id].mark_started()
 
-    async def _on_task_completed(self, task_id: str, task_info: Optional[TaskInfo], result: Any) -> None:
+    async def _on_task_completed(self, task_id: str, task_info: Optional[TaskInfo], result: Any, from_cache: bool = False) -> None:
         """
         Callback when a task is completed.
         
@@ -719,9 +719,12 @@ class AsyncTaskWorker:
             task_info: Task info from WorkerPool (not used in AsyncTaskWorker implementation, 
                       which retrieves task info from its own tasks dict)
             result: Task result
+            from_cache: Whether the result was served from cache
         """
         async with self.tasks_lock:
             if task_id in self.tasks:
+                # Set cache metadata before marking completed
+                self.tasks[task_id].from_cache = from_cache
                 await self.tasks[task_id].mark_completed(result)
                 # Complete any futures waiting on this task
                 await self.future_manager.complete_from_result(task_id, result)

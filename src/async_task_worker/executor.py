@@ -79,7 +79,7 @@ class TaskExecutor:
             args: Tuple,
             kwargs: Dict[str, Any],
             timeout: Optional[float] = None,
-            on_complete: Optional[Callable[[str, Any], Awaitable[None]]] = None
+            on_complete: Optional[Callable[[str, Any, bool], Awaitable[None]]] = None
     ) -> T:
         """
         Execute a task with timeout and error handling.
@@ -91,7 +91,7 @@ class TaskExecutor:
             args: Positional arguments
             kwargs: Keyword arguments
             timeout: Optional timeout in seconds
-            on_complete: Optional callback for task completion (including cache hits)
+            on_complete: Optional callback for task completion (task_id, result, from_cache)
 
         Returns:
             Task execution result
@@ -138,7 +138,7 @@ class TaskExecutor:
                     # Trigger completion callback for cache hits
                     if on_complete:
                         try:
-                            await on_complete(task_id, cached_result)
+                            await on_complete(task_id, cached_result, True)  # from_cache=True
                         except Exception as callback_error:
                             logger.error(f"Error in completion callback for cached task {task_id}: {str(callback_error)}")
                     return cached_result
@@ -233,7 +233,7 @@ class TaskExecutor:
             # Trigger completion callback for non-cached results
             if on_complete:
                 try:
-                    await on_complete(task_id, result)
+                    await on_complete(task_id, result, False)  # from_cache=False
                 except Exception as callback_error:
                     logger.error(f"Error in completion callback for task {task_id}: {str(callback_error)}")
 

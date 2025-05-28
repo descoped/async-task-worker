@@ -369,6 +369,62 @@ async def test_cached_task_futures_completion(worker):
 
 
 @pytest.mark.asyncio
+async def test_cache_metadata_flag(worker):
+    """Test that tasks correctly indicate whether results came from cache"""
+    # Execute task once to populate cache
+    args = (0.01, "cache_metadata_test")
+    first_id = await worker.add_task(fast_task, *args)
+    assert await wait_for_status(worker, first_id, TaskStatus.COMPLETED, timeout=2.0)
+
+    # Execute same task again with same args (should use cache)
+    second_id = await worker.add_task(fast_task, *args)
+    assert await wait_for_status(worker, second_id, TaskStatus.COMPLETED, timeout=1.0)
+
+    # Get both task infos
+    first_task = await worker.get_task_info(first_id)
+    second_task = await worker.get_task_info(second_id)
+    
+    # Verify cache metadata
+    assert first_task.from_cache is False  # First execution should not be from cache
+    assert second_task.from_cache is True  # Second execution should be from cache
+    
+    # Both should have same result
+    assert first_task.result == second_task.result
+    assert first_task.result["value"] == "cache_metadata_test"
+
+
+@pytest.mark.asyncio
+async def test_cache_metadata_in_serialization(worker):
+    """Test that cache metadata is included in task serialization"""
+    # Execute task once to populate cache
+    args = (0.01, "serialization_test")
+    first_id = await worker.add_task(fast_task, *args)
+    assert await wait_for_status(worker, first_id, TaskStatus.COMPLETED, timeout=2.0)
+
+    # Execute same task again with same args (should use cache)
+    second_id = await worker.add_task(fast_task, *args)
+    assert await wait_for_status(worker, second_id, TaskStatus.COMPLETED, timeout=1.0)
+
+    # Get tasks via get_all_tasks
+    all_tasks = await worker.get_all_tasks()
+    first_task = next(t for t in all_tasks if t.id == first_id)
+    second_task = next(t for t in all_tasks if t.id == second_id)
+    
+    # Verify cache metadata in serialized tasks
+    assert first_task.from_cache is False
+    assert second_task.from_cache is True
+    
+    # Test to_dict serialization
+    first_dict = first_task.to_dict()
+    second_dict = second_task.to_dict()
+    
+    assert "from_cache" in first_dict
+    assert "from_cache" in second_dict
+    assert first_dict["from_cache"] is False
+    assert second_dict["from_cache"] is True
+
+
+@pytest.mark.asyncio
 async def test_cache_invalidation(worker):
     """Test that cache invalidation works"""
     # Execute task

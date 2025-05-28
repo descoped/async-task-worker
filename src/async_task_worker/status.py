@@ -100,6 +100,7 @@ class TaskInfo(BaseModel):
     error: Optional[str] = None
     progress: float = 0.0
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    from_cache: bool = False
 
     # Lock for synchronized state changes
     _lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
@@ -231,6 +232,7 @@ class TaskInfo(BaseModel):
             "error": self.error,
             "progress": current_progress,
             "metadata": self.metadata,
+            "from_cache": self.from_cache,
         }
 
     def get_current_progress(self) -> float:
