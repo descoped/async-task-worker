@@ -81,7 +81,7 @@ jobs:
     - name: Run tests with coverage
       run: |
         echo "🧪 Running test suite with coverage..."
-        uv run pytest -v --tb=short --cov=src/async_events --cov=src/async_task_worker --cov=src/async_cache --cov-report=xml --cov-report=term
+        uv run pytest -v --tb=short --cov --cov-report=xml --cov-report=term
         echo "✅ All tests passed"
 
     - name: Upload coverage reports to Codecov
