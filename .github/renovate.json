@@ -16,7 +16,7 @@
     "renovate"
   ],
   "platformAutomerge": true,
-  "baseBranches": [
+  "baseBranchPatterns": [
     "master"
   ],
   "packageRules": [
