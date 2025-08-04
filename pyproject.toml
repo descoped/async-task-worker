@@ -27,10 +27,12 @@ dev = [
     "fastapi>=0.115.12",
     "pyyaml>=6.0.2",
     "redis>=6.1.0",
+    "ruff>=0.12.7",
 ]
 test = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.25.0",
+    "pytest-cov>=6.2.1",
 ]
 
 [tool.pytest.ini_options]
@@ -82,3 +84,52 @@ publish-url = "https://upload.pypi.org/legacy/"
 name = "testpypi"
 url = "https://test.pypi.org/simple/"
 publish-url = "https://test.pypi.org/legacy/"
+
+
+[tool.ruff]
+# Target Python 3.11+
+target-version = "py311"
+# Modern line length for readability
+line-length = 120
+# Include all Python files
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+
+[tool.ruff.lint]
+# Only select rules that catch real errors/bugs that should block builds
+select = [
+    "E9",    # Runtime errors (syntax errors, indentation errors)
+    "F63",   # Invalid print syntax
+    "F7",    # Syntax errors
+    "I",     # Import sorting
+]
+
+# Ignore common architectural patterns and forward references
+ignore = [
+    "E402",   # Module level import not at top (needed for circular import avoidance)
+    "E501",   # Line length (handled by formatter)
+    "E722",   # Bare except (sometimes intentional)
+    "F821",   # Undefined name (forward references in type annotations)
+]
+
+# Allow autofix for all enabled rules
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+# Test files can have unused imports
+"tests/*" = ["F401"]
+# Examples can be more relaxed
+"examples/*" = ["F401", "F841"]
+
+[tool.ruff.lint.isort]
+# Group imports cleanly
+combine-as-imports = true
+force-wrap-aliases = true
+
+[tool.ruff.format]
+# Use double quotes for strings
+quote-style = "double"
+# Indent with spaces
+indent-style = "space"
+# Unix line endings
+line-ending = "lf"
