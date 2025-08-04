@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class QueueStats:
     """Statistics for the task queue."""
+
     queue_size: int = 0
     enqueued_total: int = 0
     dequeued_total: int = 0
@@ -82,13 +83,7 @@ class TaskQueue:
         self._queue_lock = asyncio.Lock()
 
     async def put(
-            self,
-            priority: int,
-            task_id: str,
-            task_func: Any,
-            args: Tuple,
-            kwargs: Dict,
-            timeout: Optional[float]
+        self, priority: int, task_id: str, task_func: Any, args: Tuple, kwargs: Dict, timeout: Optional[float]
     ) -> None:
         """
         Put a task in the queue.

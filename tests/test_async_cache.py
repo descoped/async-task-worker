@@ -13,13 +13,7 @@ from typing import NamedTuple
 
 import pytest
 
-from async_cache import (
-    AsyncCache,
-    compose_key_functions,
-    extract_key_component,
-    key_component,
-    InvalidCacheKeyError
-)
+from async_cache import AsyncCache, InvalidCacheKeyError, compose_key_functions, extract_key_component, key_component
 from async_cache.adapters import MemoryCacheAdapter
 from async_cache.key_utils import CacheKeyContext
 
@@ -44,6 +38,7 @@ class SimpleObject:
 
 class SlotObject:
     """Simple class with __slots__ for testing serialization."""
+
     __slots__ = ["value", "name"]
 
     def __init__(self, value):
@@ -53,6 +48,7 @@ class SlotObject:
 
 class CustomTuple(NamedTuple):
     """Named tuple for testing serialization."""
+
     id: str
     value: int
 
@@ -122,10 +118,7 @@ async def test_cache_with_complex_types(memory_cache):
         "tuple_object": CustomTuple(id="test", value=44),
         "datetime": datetime.datetime.now(),
         "uuid": uuid.uuid4(),
-        "nested": {
-            "list": [1, 2, {"a": 3}],
-            "dict": {"key": [4, 5, 6]}
-        }
+        "nested": {"list": [1, 2, {"a": 3}], "dict": {"key": [4, 5, 6]}},
     }
 
     result = {"status": "success", "data": kwargs}
@@ -385,11 +378,7 @@ async def test_none_ttl_no_expiry(memory_cache):
 async def test_edge_case_floats_and_special_values(memory_cache):
     """Test cache behavior with edge case float values."""
     # Test with special float values
-    special_floats = {
-        "inf": float("inf"),
-        "neg_inf": float("-inf"),
-        "nan": float("nan")
-    }
+    special_floats = {"inf": float("inf"), "neg_inf": float("-inf"), "nan": float("nan")}
 
     # Store in cache
     await memory_cache.set("special_floats", (), {}, special_floats)
@@ -479,19 +468,12 @@ async def test_custom_key_function(memory_cache):
 
     # Set cache with custom key function
     await memory_cache.set(
-        "custom_key_func",
-        (),
-        {"important": "value1", "ignore": "this"},
-        "result1",
-        cache_key_fn=custom_key_fn
+        "custom_key_func", (), {"important": "value1", "ignore": "this"}, "result1", cache_key_fn=custom_key_fn
     )
 
     # Should hit cache even with different 'ignore' value
     hit, value = await memory_cache.get(
-        "custom_key_func",
-        (),
-        {"important": "value1", "ignore": "different"},
-        cache_key_fn=custom_key_fn
+        "custom_key_func", (), {"important": "value1", "ignore": "different"}, cache_key_fn=custom_key_fn
     )
 
     assert hit is True
@@ -499,10 +481,7 @@ async def test_custom_key_function(memory_cache):
 
     # Should miss cache with different 'important' value
     hit, value = await memory_cache.get(
-        "custom_key_func",
-        (),
-        {"important": "value2", "ignore": "this"},
-        cache_key_fn=custom_key_fn
+        "custom_key_func", (), {"important": "value2", "ignore": "this"}, cache_key_fn=custom_key_fn
     )
 
     assert hit is False
@@ -514,13 +493,7 @@ async def test_entry_id_mapping(memory_cache):
 
     # Set cache with entry_id
     entry_id = "test-entry-123"
-    await memory_cache.set(
-        "mapped_func",
-        (1, 2),
-        {"a": "b"},
-        "result",
-        entry_id=entry_id
-    )
+    await memory_cache.set("mapped_func", (1, 2), {"a": "b"}, "result", entry_id=entry_id)
 
     # Check if we can retrieve the key
     key = await memory_cache.get_cache_key_for_id(entry_id)
@@ -538,13 +511,7 @@ async def test_invalidate_by_id(memory_cache):
 
     # Set cache with entry_id
     entry_id = "entry-to-invalidate"
-    await memory_cache.set(
-        "invalidate_func",
-        (),
-        {},
-        "should be invalidated",
-        entry_id=entry_id
-    )
+    await memory_cache.set("invalidate_func", (), {}, "should be invalidated", entry_id=entry_id)
 
     # Verify it's cached
     hit, _ = await memory_cache.get("invalidate_func", (), {})
@@ -577,40 +544,22 @@ async def test_metadata_in_key_generation(memory_cache):
 
     # Set cache with metadata and custom key function
     await memory_cache.set(
-        "versioned_func",
-        (),
-        {},
-        "v1-result",
-        metadata={"version": "1.0"},
-        cache_key_fn=metadata_key_fn
+        "versioned_func", (), {}, "v1-result", metadata={"version": "1.0"}, cache_key_fn=metadata_key_fn
     )
 
     # Set another entry with different version
     await memory_cache.set(
-        "versioned_func",
-        (),
-        {},
-        "v2-result",
-        metadata={"version": "2.0"},
-        cache_key_fn=metadata_key_fn
+        "versioned_func", (), {}, "v2-result", metadata={"version": "2.0"}, cache_key_fn=metadata_key_fn
     )
 
     # Retrieve with v1
     hit, v1_value = await memory_cache.get(
-        "versioned_func",
-        (),
-        {},
-        metadata={"version": "1.0"},
-        cache_key_fn=metadata_key_fn
+        "versioned_func", (), {}, metadata={"version": "1.0"}, cache_key_fn=metadata_key_fn
     )
 
     # Retrieve with v2
     hit2, v2_value = await memory_cache.get(
-        "versioned_func",
-        (),
-        {},
-        metadata={"version": "2.0"},
-        cache_key_fn=metadata_key_fn
+        "versioned_func", (), {}, metadata={"version": "2.0"}, cache_key_fn=metadata_key_fn
     )
 
     # Should have different results for different versions
@@ -638,42 +587,25 @@ async def test_compose_key_functions(memory_cache):
 
     # Test with the composite key function
     await memory_cache.set(
-        "user_data",
-        (),
-        {"user_id": 123},
-        "user 123 data",
-        metadata={"version": "2.0"},
-        cache_key_fn=composite_key
+        "user_data", (), {"user_id": 123}, "user 123 data", metadata={"version": "2.0"}, cache_key_fn=composite_key
     )
 
     # Should hit with same parameters
     hit, value = await memory_cache.get(
-        "user_data",
-        (),
-        {"user_id": 123},
-        metadata={"version": "2.0"},
-        cache_key_fn=composite_key
+        "user_data", (), {"user_id": 123}, metadata={"version": "2.0"}, cache_key_fn=composite_key
     )
     assert hit is True
     assert value == "user 123 data"
 
     # Should miss with different user_id
     hit, _ = await memory_cache.get(
-        "user_data",
-        (),
-        {"user_id": 456},
-        metadata={"version": "2.0"},
-        cache_key_fn=composite_key
+        "user_data", (), {"user_id": 456}, metadata={"version": "2.0"}, cache_key_fn=composite_key
     )
     assert hit is False
 
     # Should miss with different version
     hit, _ = await memory_cache.get(
-        "user_data",
-        (),
-        {"user_id": 123},
-        metadata={"version": "3.0"},
-        cache_key_fn=composite_key
+        "user_data", (), {"user_id": 123}, metadata={"version": "3.0"}, cache_key_fn=composite_key
     )
     assert hit is False
 
@@ -697,7 +629,7 @@ async def test_extract_key_component(memory_cache):
     context = {
         "fn_name": "get_user",
         "kwargs": {"user_id": 42, "include_details": True},
-        "metadata": {"app_version": "3.1.4"}
+        "metadata": {"app_version": "3.1.4"},
     }
 
     # Verify extraction works
@@ -734,11 +666,7 @@ async def test_key_component_decorator(memory_cache):
     composite_key = compose_key_functions(user_key, action_key, timestamp)
 
     # Test the key generation
-    context = {
-        "fn_name": "get_profile",
-        "kwargs": {"user_id": 789},
-        "metadata": {"timestamp": "2023-04-01"}
-    }
+    context = {"fn_name": "get_profile", "kwargs": {"user_id": 789}, "metadata": {"timestamp": "2023-04-01"}}
 
     assert user_key(context) == "user:789"
     assert action_key(context) == "action:get_profile"
@@ -790,13 +718,7 @@ async def test_key_validation(memory_cache):
 
     # Test with invalid key function
     with pytest.raises(InvalidCacheKeyError):
-        await memory_cache.set(
-            "invalid_key_test",
-            (),
-            {},
-            "test",
-            cache_key_fn=invalid_key_fn
-        )
+        await memory_cache.set("invalid_key_test", (), {}, "test", cache_key_fn=invalid_key_fn)
 
     # Define a function for duplicate keys
     # noinspection PyUnusedLocal
@@ -804,30 +726,13 @@ async def test_key_validation(memory_cache):
         return "same-key-always"
 
     # First use should work
-    await memory_cache.set(
-        "duplicate_test_1",
-        (),
-        {},
-        "first value",
-        cache_key_fn=constant_key_fn
-    )
+    await memory_cache.set("duplicate_test_1", (), {}, "first value", cache_key_fn=constant_key_fn)
 
     # Should log warning about duplicate but still work
-    await memory_cache.set(
-        "duplicate_test_2",
-        (),
-        {},
-        "second value",
-        cache_key_fn=constant_key_fn
-    )
+    await memory_cache.set("duplicate_test_2", (), {}, "second value", cache_key_fn=constant_key_fn)
 
     # Verify the latest value is used
-    hit, value = await memory_cache.get(
-        "duplicate_test_2",
-        (),
-        {},
-        cache_key_fn=constant_key_fn
-    )
+    hit, value = await memory_cache.get("duplicate_test_2", (), {}, cache_key_fn=constant_key_fn)
     assert hit is True
     assert value == "second value"
 

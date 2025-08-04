@@ -15,6 +15,7 @@ class TestTaskRegistry(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         # Clear task registry before each test
         from async_task_worker.registry import _TASK_REGISTRY
+
         _TASK_REGISTRY.clear()
 
     async def test_task_decorator(self):
@@ -81,6 +82,7 @@ class TestTaskRegistry(unittest.IsolatedAsyncioTestCase):
     def test_task_decorator_with_non_async(self):
         """Test that task decorator raises TypeError when applied to a non-async function."""
         with self.assertRaises(TypeError):
+
             @task("invalid_task")  # type: ignore
             def not_async_func(x):
                 return x * 2

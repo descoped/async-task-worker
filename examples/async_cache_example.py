@@ -11,21 +11,19 @@ import asyncio
 import datetime
 import logging
 import uuid
-from typing import Dict, Any
+from typing import Any, Dict
 
 from async_cache import AsyncCache, compose_key_functions, extract_key_component, key_component
 from async_cache.adapters import MemoryCacheAdapter
 from async_task_worker import AsyncTaskWorker
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
 # ----- STANDALONE CACHE EXAMPLE -----
+
 
 async def standalone_cache_example():
     """Demonstrate standalone async_cache usage."""
@@ -35,12 +33,7 @@ async def standalone_cache_example():
     adapter = MemoryCacheAdapter(max_size=100)
 
     # Create cache with 5 second default TTL
-    cache = AsyncCache(
-        adapter=adapter,
-        default_ttl=5,
-        enabled=True,
-        cleanup_interval=60
-    )
+    cache = AsyncCache(adapter=adapter, default_ttl=5, enabled=True, cleanup_interval=60)
 
     # Start background cleanup task
     await cache.start_cleanup_task()
@@ -85,7 +78,7 @@ async def standalone_cache_example():
             kwargs={"user_id": 123},
             result={"name": "Alice", "role": "admin"},
             metadata={"version": "2.0"},
-            cache_key_fn=composite_key
+            cache_key_fn=composite_key,
         )
 
         # Retrieve with same keys
@@ -94,7 +87,7 @@ async def standalone_cache_example():
             args=(),
             kwargs={"user_id": 123},
             metadata={"version": "2.0"},
-            cache_key_fn=composite_key
+            cache_key_fn=composite_key,
         )
         logger.info(f"Same keys - hit: {hit}, result: {result}")
 
@@ -104,7 +97,7 @@ async def standalone_cache_example():
             args=(),
             kwargs={"user_id": 123},
             metadata={"version": "3.0"},
-            cache_key_fn=composite_key
+            cache_key_fn=composite_key,
         )
         logger.info(f"Different version - hit: {hit}")
 
@@ -119,7 +112,7 @@ async def standalone_cache_example():
             args=(),
             kwargs={"product_id": 456},
             result={"name": "Widget", "price": 19.99},
-            entry_id=entry_id
+            entry_id=entry_id,
         )
 
         # Get cache key for entry ID
@@ -159,7 +152,7 @@ class CachedTaskWorker:
         self.cache = AsyncCache(
             adapter=self.cache_adapter,
             default_ttl=30,  # 30 second TTL
-            enabled=True
+            enabled=True,
         )
 
         # Create task worker with registered tasks
@@ -186,7 +179,7 @@ class CachedTaskWorker:
     async def get_product(self, product_id: int) -> Dict[str, Any]:
         """
         Get product details, using cache when available.
-        
+
         This demonstrates a task using the cache directly.
         """
         # Check cache first
@@ -195,7 +188,7 @@ class CachedTaskWorker:
             args=(),
             kwargs={"product_id": product_id},
             metadata={"version": "1.0"},
-            cache_key_fn=self.composite_key
+            cache_key_fn=self.composite_key,
         )
 
         if hit:
@@ -223,7 +216,7 @@ class CachedTaskWorker:
             kwargs={"product_id": product_id},
             result=result,
             metadata={"version": "1.0"},
-            cache_key_fn=self.composite_key
+            cache_key_fn=self.composite_key,
         )
 
         return result
@@ -231,7 +224,7 @@ class CachedTaskWorker:
     async def update_product(self, product_id: int, **updates) -> Dict[str, Any]:
         """
         Update a product and invalidate its cache entry.
-        
+
         This demonstrates cache invalidation when data changes.
         """
         if product_id not in PRODUCTS:
@@ -248,7 +241,7 @@ class CachedTaskWorker:
             args=(),
             kwargs={"product_id": product_id},
             metadata={"version": "1.0"},
-            cache_key_fn=self.composite_key
+            cache_key_fn=self.composite_key,
         )
 
         logger.info(f"Invalidated cache for product_id={product_id}")

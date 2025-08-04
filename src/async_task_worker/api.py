@@ -37,17 +37,12 @@ from pydantic import BaseModel, Field, field_validator
 
 from async_task_worker import (
     AsyncTaskWorker,
+    TaskInfo,
     TaskStatus,
     get_all_task_types,
     get_task_function,
-    TaskInfo,
 )
-from async_task_worker.exceptions import (
-    ErrorCategory,
-    TaskCancellationError,
-    TaskDefinitionError,
-    TaskError
-)
+from async_task_worker.exceptions import ErrorCategory, TaskCancellationError, TaskDefinitionError, TaskError
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +50,7 @@ logger = logging.getLogger(__name__)
 # Request/Response Models
 class TaskSubmitRequest(BaseModel):
     """Model for task submission requests"""
+
     task_type: str
     params: Dict[str, Any] = Field(default_factory=dict)
     priority: int = 0
@@ -64,7 +60,7 @@ class TaskSubmitRequest(BaseModel):
     use_cache: bool = True
     cache_ttl: Optional[int] = None
 
-    @field_validator('task_type')
+    @field_validator("task_type")
     def validate_task_type(cls, v):
         if not v:
             raise ValueError("Task type cannot be empty")
@@ -73,6 +69,7 @@ class TaskSubmitRequest(BaseModel):
 
 class TaskResponse(BaseModel):
     """Model for task responses"""
+
     id: str
     status: TaskStatus
     progress: float
@@ -84,17 +81,20 @@ class TaskResponse(BaseModel):
 
 class TaskListResponse(BaseModel):
     """Model for task list responses"""
+
     tasks: List[TaskResponse]
     count: int
 
 
 class TaskTypesResponse(BaseModel):
     """Model for task types list response"""
+
     task_types: List[str]
 
 
 class ApiErrorDetail(BaseModel):
     """Standardized API error response detail"""
+
     message: str
     error_type: str
     category: Optional[str] = None
@@ -104,6 +104,7 @@ class ApiErrorDetail(BaseModel):
 
 class HealthResponse(BaseModel):
     """Model for health check response"""
+
     status: str
     worker_count: int
     queue_size: int  # Added queue size to health check info
@@ -112,10 +113,10 @@ class HealthResponse(BaseModel):
 def map_error_to_status_code(error: Union[Exception, TaskError]) -> Tuple[int, ApiErrorDetail]:
     """
     Map an error to an appropriate HTTP status code and standardized error detail.
-    
+
     Args:
         error: The exception that occurred
-        
+
     Returns:
         Tuple of (status_code, error_detail)
     """
@@ -164,7 +165,7 @@ def map_error_to_status_code(error: Union[Exception, TaskError]) -> Tuple[int, A
         error_type=error_type,
         category=str(category) if category else None,
         task_id=task_id,
-        is_retryable=is_retryable
+        is_retryable=is_retryable,
     )
 
     return status_code, error_detail
@@ -173,10 +174,10 @@ def map_error_to_status_code(error: Union[Exception, TaskError]) -> Tuple[int, A
 def handle_task_exception(e: Exception) -> HTTPException:
     """
     Convert any exception to a standardized HTTPException with appropriate status code.
-    
+
     Args:
         e: The exception to handle
-        
+
     Returns:
         HTTPException with appropriate status code and detail
     """
@@ -185,17 +186,10 @@ def handle_task_exception(e: Exception) -> HTTPException:
     status_code, error_detail = map_error_to_status_code(e)
 
     # Use model_dump for Pydantic v2 compatibility
-    return HTTPException(
-        status_code=status_code,
-        detail=error_detail.model_dump(exclude_none=True)
-    )
+    return HTTPException(status_code=status_code, detail=error_detail.model_dump(exclude_none=True))
 
 
-def create_task_worker_router(
-        worker: AsyncTaskWorker,
-        prefix: str = "",
-        tags: Optional[List[str]] = None
-) -> APIRouter:
+def create_task_worker_router(worker: AsyncTaskWorker, prefix: str = "", tags: Optional[List[str]] = None) -> APIRouter:
     """
     Create a FastAPI router for the AsyncTaskWorker.
 
@@ -227,11 +221,11 @@ def create_task_worker_router(
         try:
             # If the test fixture sets a "workers" attribute, use its length.
             # Otherwise, use the worker pool's count.
-            worker_count = len(worker.workers) if hasattr(worker, 'workers') else worker.worker_pool.worker_count
+            worker_count = len(worker.workers) if hasattr(worker, "workers") else worker.worker_pool.worker_count
 
             # In a real AsyncTaskWorker, queue.qsize is a coroutine method
             # But in tests it might be mocked as a property
-            if hasattr(worker.queue, 'qsize') and callable(worker.queue.qsize):
+            if hasattr(worker.queue, "qsize") and callable(worker.queue.qsize):
                 queue_size = await worker.queue.qsize()
             else:
                 # For tests where it might be a property
@@ -276,10 +270,7 @@ def create_task_worker_router(
             task_info = await worker.get_task_info(task_id)
             if task_info is None:
                 # Internal error if task was created but info not found
-                raise TaskError(
-                    message=f"Task {task_id} created but info not found",
-                    category=ErrorCategory.INTERNAL
-                )
+                raise TaskError(message=f"Task {task_id} created but info not found", category=ErrorCategory.INTERNAL)
 
             return TaskResponse(
                 id=task_info.id,
@@ -300,11 +291,7 @@ def create_task_worker_router(
         try:
             task_info = await worker.get_task_info(task_id)
             if task_info is None:
-                raise TaskError(
-                    message=f"Task {task_id} not found",
-                    category=ErrorCategory.RESOURCE,
-                    task_id=task_id
-                )
+                raise TaskError(message=f"Task {task_id} not found", category=ErrorCategory.RESOURCE, task_id=task_id)
 
             return TaskResponse(
                 id=task_info.id,
@@ -324,11 +311,7 @@ def create_task_worker_router(
         try:
             task_info = await worker.get_task_info(task_id)
             if task_info is None:
-                raise TaskError(
-                    message=f"Task {task_id} not found",
-                    category=ErrorCategory.RESOURCE,
-                    task_id=task_id
-                )
+                raise TaskError(message=f"Task {task_id} not found", category=ErrorCategory.RESOURCE, task_id=task_id)
 
             if task_info.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
                 # Task already finished, just return success
@@ -336,18 +319,15 @@ def create_task_worker_router(
 
             cancelled = await worker.cancel_task(task_id)
             if not cancelled:
-                raise TaskCancellationError(
-                    message=f"Task {task_id} could not be cancelled",
-                    task_id=task_id
-                )
+                raise TaskCancellationError(message=f"Task {task_id} could not be cancelled", task_id=task_id)
         except Exception as e:
             raise handle_task_exception(e)
 
     @router.get("/tasks", response_model=TaskListResponse)
     async def list_tasks(
-            task_status: Optional[TaskStatus] = None,
-            limit: int = Query(50, ge=1, le=100),
-            older_than_minutes: Optional[int] = Query(None, ge=0),
+        task_status: Optional[TaskStatus] = None,
+        limit: int = Query(50, ge=1, le=100),
+        older_than_minutes: Optional[int] = Query(None, ge=0),
     ) -> TaskListResponse:
         """List tasks with optional filtering"""
         try:

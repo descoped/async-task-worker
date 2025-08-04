@@ -1,10 +1,11 @@
 """
 Modern SSE client using asyncio for reactive event processing.
 """
+
 import asyncio
 import json
 import logging
-from typing import Callable, Dict, List, Optional, Any, AsyncGenerator
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 
 from httpx import AsyncClient, Response
 
@@ -23,11 +24,11 @@ class SSEClient:
     """
 
     def __init__(
-            self,
-            url: str,
-            headers: Optional[Dict[str, str]] = None,
-            event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
-            timeout: int = 60
+        self,
+        url: str,
+        headers: Optional[Dict[str, str]] = None,
+        event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        timeout: int = 60,
     ):
         self.url = url
         self.headers = headers or {}
@@ -35,11 +36,7 @@ class SSEClient:
         self.timeout = timeout
 
         # Add required headers for SSE
-        self.headers.update({
-            "Accept": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive"
-        })
+        self.headers.update({"Accept": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive"})
 
         # State management
         self._running = False
@@ -124,11 +121,7 @@ class SSEClient:
         try:
             # Try to parse as JSON
             data_obj = json.loads(data)
-            event = {
-                "event": event_type,
-                "data": data_obj,
-                "id": event_id
-            }
+            event = {"event": event_type, "data": data_obj, "id": event_id}
 
             # Store event
             self._events.append(event)

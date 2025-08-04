@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 class ErrorCategory(str, Enum):
     """Categories of errors for classification and handling."""
+
     TASK_DEFINITION = "task_definition"
     TASK_EXECUTION = "task_execution"
     TIMEOUT = "timeout"
@@ -27,6 +28,7 @@ class ErrorCategory(str, Enum):
 
 class SerializationError(Exception):
     """Exception raised when serialization fails."""
+
     pass
 
 
@@ -34,12 +36,12 @@ class TaskError(Exception):
     """Base exception for all task worker errors."""
 
     def __init__(
-            self,
-            message: str,
-            category: ErrorCategory = ErrorCategory.UNKNOWN,
-            original_error: Optional[Exception] = None,
-            task_id: Optional[str] = None,
-            is_retryable: bool = False
+        self,
+        message: str,
+        category: ErrorCategory = ErrorCategory.UNKNOWN,
+        original_error: Optional[Exception] = None,
+        task_id: Optional[str] = None,
+        is_retryable: bool = False,
     ):
         self.message = message
         self.category = category
@@ -81,7 +83,7 @@ class TaskDefinitionError(TaskError):
             category=ErrorCategory.TASK_DEFINITION,
             original_error=original_error,
             task_id=task_id,
-            is_retryable=False
+            is_retryable=False,
         )
 
 
@@ -89,18 +91,18 @@ class TaskExecutionError(TaskError):
     """Error during task execution."""
 
     def __init__(
-            self,
-            message: str,
-            original_error: Optional[Exception] = None,
-            task_id: Optional[str] = None,
-            is_retryable: bool = True
+        self,
+        message: str,
+        original_error: Optional[Exception] = None,
+        task_id: Optional[str] = None,
+        is_retryable: bool = True,
     ):
         super().__init__(
             message=message,
             category=ErrorCategory.TASK_EXECUTION,
             original_error=original_error,
             task_id=task_id,
-            is_retryable=is_retryable
+            is_retryable=is_retryable,
         )
 
 
@@ -112,7 +114,7 @@ class TaskTimeoutError(TaskError):
             message=f"Task timed out after {timeout} seconds",
             category=ErrorCategory.TIMEOUT,
             task_id=task_id,
-            is_retryable=True
+            is_retryable=True,
         )
 
 
@@ -120,12 +122,7 @@ class TaskCancellationError(TaskError):
     """Error when a task is cancelled."""
 
     def __init__(self, message: str = "Task was cancelled", task_id: Optional[str] = None):
-        super().__init__(
-            message=message,
-            category=ErrorCategory.CANCELLATION,
-            task_id=task_id,
-            is_retryable=False
-        )
+        super().__init__(message=message, category=ErrorCategory.CANCELLATION, task_id=task_id, is_retryable=False)
 
 
 class ErrorHandler:
@@ -145,10 +142,7 @@ class ErrorHandler:
         self.structured_logging = structured_logging
 
     def handle_error(
-            self,
-            error: Exception,
-            task_id: Optional[str] = None,
-            context: Optional[Dict[str, Any]] = None
+        self, error: Exception, task_id: Optional[str] = None, context: Optional[Dict[str, Any]] = None
     ) -> TaskError:
         """
         Handle an error and return a standardized TaskError.
@@ -174,25 +168,14 @@ class ErrorHandler:
 
         # Map standard exceptions to appropriate TaskError types
         if isinstance(error, asyncio.TimeoutError):
-            task_error = TaskTimeoutError(
-                timeout=context.get("timeout", 0),
-                task_id=task_id
-            )
+            task_error = TaskTimeoutError(timeout=context.get("timeout", 0), task_id=task_id)
         elif isinstance(error, asyncio.CancelledError):
             task_error = TaskCancellationError(task_id=task_id)
         elif isinstance(error, (TypeError, ValueError, AttributeError)):
-            task_error = TaskDefinitionError(
-                message=str(error),
-                original_error=error,
-                task_id=task_id
-            )
+            task_error = TaskDefinitionError(message=str(error), original_error=error, task_id=task_id)
         else:
             # Default to generic execution error
-            task_error = TaskExecutionError(
-                message=str(error),
-                original_error=error,
-                task_id=task_id
-            )
+            task_error = TaskExecutionError(message=str(error), original_error=error, task_id=task_id)
 
         self._log_error(task_error, context)
         return task_error
@@ -215,10 +198,7 @@ class ErrorHandler:
 
         # Create log message
         if self.structured_logging:
-            log_data = {
-                "error": error.to_dict(),
-                "context": context
-            }
+            log_data = {"error": error.to_dict(), "context": context}
             logger.log(log_level, log_data)
         else:
             message = str(error)
@@ -240,6 +220,6 @@ class ErrorHandler:
         """
         if exc.__traceback__:
             tb_lines = traceback.format_exception(type(exc), exc, exc.__traceback__)
-            return ''.join(tb_lines)
+            return "".join(tb_lines)
         else:
             return f"{type(exc).__name__}: {str(exc)}"

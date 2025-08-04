@@ -40,11 +40,7 @@ class MsgPackSerializer:
             SerializationError: If serialization fails and fallback is False
         """
         try:
-            return msgpack.packb(
-                obj,
-                default=lambda o: MsgPackSerializer._encode_hook(o, fallback),
-                use_bin_type=True
-            )
+            return msgpack.packb(obj, default=lambda o: MsgPackSerializer._encode_hook(o, fallback), use_bin_type=True)
         except Exception as e:
             raise SerializationError(f"Failed to serialize object: {str(e)}")
 
@@ -78,17 +74,11 @@ class MsgPackSerializer:
         """
         # Handle datetime objects - fully supported for roundtrip
         if isinstance(obj, datetime.datetime):
-            return {
-                "__type_code": MsgPackSerializer.TYPE_DATETIME,
-                "data": obj.isoformat()
-            }
+            return {"__type_code": MsgPackSerializer.TYPE_DATETIME, "data": obj.isoformat()}
 
         # Handle UUID objects - fully supported for roundtrip
         if isinstance(obj, uuid.UUID):
-            return {
-                "__type_code": MsgPackSerializer.TYPE_UUID,
-                "data": str(obj)
-            }
+            return {"__type_code": MsgPackSerializer.TYPE_UUID, "data": str(obj)}
 
         # Explicitly handle functions (including lambdas)
         if isinstance(obj, types.FunctionType):
@@ -96,7 +86,7 @@ class MsgPackSerializer:
                 return {
                     "__type_code": MsgPackSerializer.TYPE_STRING_FALLBACK,
                     "type": type(obj).__name__,
-                    "data": str(obj)
+                    "data": str(obj),
                 }
             else:
                 raise SerializationError(f"Functions of type {type(obj).__name__} are not serializable")
@@ -112,7 +102,7 @@ class MsgPackSerializer:
                         msgpack.packb(
                             value,
                             default=lambda o: MsgPackSerializer._encode_hook(o, fallback=False),
-                            use_bin_type=True
+                            use_bin_type=True,
                         )
                         serializable_dict[key] = value
                     except Exception:
@@ -121,7 +111,7 @@ class MsgPackSerializer:
                             serializable_dict[key] = {
                                 "__type_code": MsgPackSerializer.TYPE_STRING_FALLBACK,
                                 "type": type(value).__name__,
-                                "data": str(value)
+                                "data": str(value),
                             }
                         else:
                             # Without fallback, propagate the exception
@@ -131,14 +121,14 @@ class MsgPackSerializer:
                     "__type_code": MsgPackSerializer.TYPE_CUSTOM_OBJECT,
                     "type": obj.__class__.__name__,
                     "module": obj.__class__.__module__,
-                    "data": serializable_dict
+                    "data": serializable_dict,
                 }
             except Exception as e:
                 if fallback:
                     return {
                         "__type_code": MsgPackSerializer.TYPE_STRING_FALLBACK,
                         "type": type(obj).__name__,
-                        "data": str(obj)
+                        "data": str(obj),
                     }
                 raise SerializationError(f"Object of type {type(obj).__name__} is not serializable: {str(e)}")
 
@@ -154,7 +144,7 @@ class MsgPackSerializer:
                             msgpack.packb(
                                 value,
                                 default=lambda o: MsgPackSerializer._encode_hook(o, fallback=False),
-                                use_bin_type=True
+                                use_bin_type=True,
                             )
                             slot_dict[slot] = value
                         except Exception:
@@ -163,7 +153,7 @@ class MsgPackSerializer:
                                 slot_dict[slot] = {
                                     "__type_code": MsgPackSerializer.TYPE_STRING_FALLBACK,
                                     "type": type(value).__name__,
-                                    "data": str(value)
+                                    "data": str(value),
                                 }
                             else:
                                 # Without fallback, propagate the exception
@@ -173,24 +163,20 @@ class MsgPackSerializer:
                     "__type_code": MsgPackSerializer.TYPE_CUSTOM_OBJECT,
                     "type": obj.__class__.__name__,
                     "module": obj.__class__.__module__,
-                    "data": slot_dict
+                    "data": slot_dict,
                 }
             except Exception as e:
                 if fallback:
                     return {
                         "__type_code": MsgPackSerializer.TYPE_STRING_FALLBACK,
                         "type": type(obj).__name__,
-                        "data": str(obj)
+                        "data": str(obj),
                     }
                 raise SerializationError(f"Object of type {type(obj).__name__} is not serializable: {str(e)}")
 
         # As a last resort, if fallback is enabled, convert to string but preserve type info
         if fallback:
-            return {
-                "__type_code": MsgPackSerializer.TYPE_STRING_FALLBACK,
-                "type": type(obj).__name__,
-                "data": str(obj)
-            }
+            return {"__type_code": MsgPackSerializer.TYPE_STRING_FALLBACK, "type": type(obj).__name__, "data": str(obj)}
 
         # If we reach here without returning and fallback is False, raise an error
         raise SerializationError(f"Object of type {type(obj).__name__} is not serializable")
@@ -214,17 +200,10 @@ class MsgPackSerializer:
 
         # Handle string fallback representations - return with clear type annotation
         if type_code == MsgPackSerializer.TYPE_STRING_FALLBACK:
-            return {
-                "__serialized_string_of_type": obj["type"],
-                "value": obj["data"]
-            }
+            return {"__serialized_string_of_type": obj["type"], "value": obj["data"]}
 
         # Handle custom objects
         if type_code == MsgPackSerializer.TYPE_CUSTOM_OBJECT:
-            return {
-                "__type": obj["type"],
-                "__module": obj["module"],
-                **obj["data"]
-            }
+            return {"__type": obj["type"], "__module": obj["module"], **obj["data"]}
 
         return obj

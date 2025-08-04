@@ -22,27 +22,27 @@ logger = logging.getLogger(__name__)
 class RedisCacheAdapter(CacheAdapter):
     """
     Redis-based cache adapter.
-    
+
     Uses Redis for distributed caching with TTL support.
-    
+
     Note:
         Requires the 'redis' package: pip install async-cache[redis]
     """
 
     def __init__(
-            self,
-            host: str = "localhost",
-            port: int = 6379,
-            db: int = 0,
-            password: Optional[str] = None,
-            key_prefix: str = "async_cache:",
-            connection_pool: Optional[Any] = None,
-            client: Optional[Any] = None,
-            **redis_kwargs
+        self,
+        host: str = "localhost",
+        port: int = 6379,
+        db: int = 0,
+        password: Optional[str] = None,
+        key_prefix: str = "async_cache:",
+        connection_pool: Optional[Any] = None,
+        client: Optional[Any] = None,
+        **redis_kwargs,
     ):
         """
         Initialize Redis cache adapter.
-        
+
         Args:
             host: Redis host address
             port: Redis port number
@@ -52,14 +52,13 @@ class RedisCacheAdapter(CacheAdapter):
             connection_pool: Optional existing Redis connection pool
             client: Optional existing Redis client instance
             **redis_kwargs: Additional arguments to pass to Redis client
-            
+
         Raises:
             ImportError: If redis package is not installed
         """
         if redis is None:
             raise ImportError(
-                "Redis adapter requires the 'redis' package. "
-                "Install with 'pip install async-cache[redis]'"
+                "Redis adapter requires the 'redis' package. Install with 'pip install async-cache[redis]'"
             )
 
         self.key_prefix = key_prefix
@@ -71,13 +70,7 @@ class RedisCacheAdapter(CacheAdapter):
             if connection_pool:
                 self.redis = redis.Redis(connection_pool=connection_pool, **redis_kwargs)
             else:
-                self.redis = redis.Redis(
-                    host=host,
-                    port=port,
-                    db=db,
-                    password=password,
-                    **redis_kwargs
-                )
+                self.redis = redis.Redis(host=host, port=port, db=db, password=password, **redis_kwargs)
 
     def _prefixed_key(self, key: str) -> str:
         """Add the prefix to a cache key."""
@@ -86,10 +79,10 @@ class RedisCacheAdapter(CacheAdapter):
     async def get(self, key: str) -> Tuple[bool, Any]:
         """
         Get a value from the Redis cache.
-        
+
         Args:
             key: The cache key
-            
+
         Returns:
             Tuple of (hit, value) where hit is True if the item was in cache
         """
@@ -111,7 +104,7 @@ class RedisCacheAdapter(CacheAdapter):
     async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
         """
         Set a value in the Redis cache.
-        
+
         Args:
             key: The cache key
             value: The value to store
@@ -133,10 +126,10 @@ class RedisCacheAdapter(CacheAdapter):
     async def delete(self, key: str) -> bool:
         """
         Delete a value from the Redis cache.
-        
+
         Args:
             key: The cache key
-            
+
         Returns:
             True if deleted, False if not found
         """
@@ -151,7 +144,7 @@ class RedisCacheAdapter(CacheAdapter):
     async def clear(self) -> None:
         """
         Clear all items from the cache with the configured prefix.
-        
+
         Note: This only clears keys with the specified prefix for safety.
         """
         try:
@@ -173,7 +166,7 @@ class RedisCacheAdapter(CacheAdapter):
     async def close(self) -> None:
         """
         Close the Redis connection.
-        
+
         This should be called when the adapter is no longer needed.
         """
         try:

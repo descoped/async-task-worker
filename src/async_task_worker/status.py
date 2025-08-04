@@ -4,6 +4,7 @@ Task Status Module
 This module provides the task status management functionality,
 including task state representation and transition handling.
 """
+
 import asyncio
 import logging
 import time
@@ -11,7 +12,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field, ConfigDict, field_validator, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ class TaskStatus(str, Enum):
 
     Using string enum ensures JSON-serializable values.
     """
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -32,15 +34,16 @@ class TaskStatus(str, Enum):
 class ProgressUpdateStrategy:
     """
     Controls how progress updates are throttled and managed.
-    
+
     Instead of acquiring a lock for every update, this class implements
     a rate-limited approach to progress tracking.
     """
 
-    def __init__(self,
-                 min_update_interval: float = 0.1,  # Minimum time between updates in seconds
-                 min_progress_change: float = 0.02,  # Minimum change in progress to trigger an update
-                 ):
+    def __init__(
+        self,
+        min_update_interval: float = 0.1,  # Minimum time between updates in seconds
+        min_progress_change: float = 0.02,  # Minimum change in progress to trigger an update
+    ):
         self.min_update_interval = min_update_interval
         self.min_progress_change = min_progress_change
         self.last_update_time = 0.0
@@ -49,12 +52,12 @@ class ProgressUpdateStrategy:
     def should_update(self, new_progress: float) -> bool:
         """
         Determine if a progress update should be processed.
-        
+
         Uses a combination of time-based throttling and value-based delta checking.
-        
+
         Args:
             new_progress: The new progress value (0.0 to 1.0)
-            
+
         Returns:
             True if the update should be processed, False otherwise
         """
@@ -75,8 +78,7 @@ class ProgressUpdateStrategy:
             return True
 
         # Check if enough time has passed or enough progress has been made
-        if (time_since_update >= self.min_update_interval or
-                progress_change >= self.min_progress_change):
+        if time_since_update >= self.min_update_interval or progress_change >= self.min_progress_change:
             self.last_update_time = current_time
             self.last_progress_value = new_progress
             return True
@@ -91,6 +93,7 @@ class TaskInfo(BaseModel):
     Contains all metadata about a task including its current status,
     timestamps, results, and custom metadata.
     """
+
     id: str
     status: TaskStatus
     created_at: datetime
@@ -112,11 +115,7 @@ class TaskInfo(BaseModel):
     _current_progress: float = PrivateAttr(default=0.0)
 
     # Pydantic v2 configuration
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True,
-        validate_assignment=True,
-        extra="allow"
-    )
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True, extra="allow")
 
     @field_validator("progress", mode="before")
     def validate_progress(cls, v: float) -> float:
@@ -177,7 +176,8 @@ class TaskInfo(BaseModel):
         async with self._lock:
             if self.is_terminal_state():
                 logger.warning(
-                    f"Task {self.id} is already in a terminal state ({self.status}), cannot mark as completed.")
+                    f"Task {self.id} is already in a terminal state ({self.status}), cannot mark as completed."
+                )
                 return
             self.status = TaskStatus.COMPLETED
             self.completed_at = datetime.now()
@@ -238,7 +238,7 @@ class TaskInfo(BaseModel):
     def get_current_progress(self) -> float:
         """
         Get the most up-to-date progress value, including any pending updates.
-        
+
         Returns:
             The current progress as a float between 0.0 and 1.0
         """

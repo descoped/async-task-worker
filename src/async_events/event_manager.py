@@ -2,12 +2,12 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Dict, List, Optional, Set, Any, Tuple, Protocol, Generic, TypeVar
+from typing import Any, Dict, Generic, List, Optional, Protocol, Set, Tuple, TypeVar
 
 logger = logging.getLogger(__name__)
 
 # Type variable for event data
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class EventFilter(Protocol):
@@ -223,8 +223,8 @@ class EventManager(Generic[T]):
                 logger.debug(f"Stored event {event_id} in recent_results")
 
             # Make sure group_id is in the event data
-            if 'group_id' not in event_data:
-                event_data['group_id'] = group_id
+            if "group_id" not in event_data:
+                event_data["group_id"] = group_id
 
             # Get list of subscribers to notify
             subscribers_to_notify = set()

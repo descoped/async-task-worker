@@ -8,7 +8,7 @@ items from the task queue.
 import asyncio
 import logging
 import time
-from typing import Callable, Dict, List, Optional, Self, Any, Awaitable, TypeVar
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Self, TypeVar
 
 from async_task_worker.executor import TaskExecutor
 from async_task_worker.queue import TaskQueue
@@ -17,7 +17,7 @@ from async_task_worker.status import TaskInfo
 logger = logging.getLogger(__name__)
 
 # Type definitions
-T = TypeVar('T')  # Used for generic task function return type
+T = TypeVar("T")  # Used for generic task function return type
 
 # Define a type for task status update callback
 TaskStatusCallback = Callable[[str, Optional[TaskInfo], Any], Awaitable[None]]
@@ -32,16 +32,16 @@ class WorkerPool:
     """
 
     def __init__(
-            self,
-            task_queue: TaskQueue,
-            task_executor: TaskExecutor,
-            max_workers: int = 10,
-            worker_poll_interval: float = 1.0,
-            on_task_start: Optional[TaskStatusCallback] = None,
-            on_task_complete: Optional[TaskStatusCallback] = None,
-            on_task_failed: Optional[TaskStatusCallback] = None,
-            on_task_cancelled: Optional[TaskStatusCallback] = None,
-            log_idle_workers: bool = False,
+        self,
+        task_queue: TaskQueue,
+        task_executor: TaskExecutor,
+        max_workers: int = 10,
+        worker_poll_interval: float = 1.0,
+        on_task_start: Optional[TaskStatusCallback] = None,
+        on_task_complete: Optional[TaskStatusCallback] = None,
+        on_task_failed: Optional[TaskStatusCallback] = None,
+        on_task_cancelled: Optional[TaskStatusCallback] = None,
+        log_idle_workers: bool = False,
     ):
         """
         Initialize the worker pool.
@@ -142,8 +142,7 @@ class WorkerPool:
                 async with asyncio.timeout(timeout):
                     pending = list(self.workers)
                     # Shield to prevent this wait from being cancelled
-                    await asyncio.gather(*[asyncio.shield(worker) for worker in pending],
-                                         return_exceptions=True)
+                    await asyncio.gather(*[asyncio.shield(worker) for worker in pending], return_exceptions=True)
             except TimeoutError:
                 logger.warning(f"Worker pool stop timed out after {timeout}s")
                 # Force cancellation for any remaining workers
@@ -154,8 +153,7 @@ class WorkerPool:
                 # Give them a moment to finish cancellation
                 try:
                     async with asyncio.timeout(0.5):
-                        await asyncio.gather(*[w for w in self.workers if not w.done()],
-                                             return_exceptions=True)
+                        await asyncio.gather(*[w for w in self.workers if not w.done()], return_exceptions=True)
                 except (TimeoutError, asyncio.CancelledError):
                     pass  # Ignore any exceptions here
             except Exception as e:
@@ -186,7 +184,9 @@ class WorkerPool:
         while self.running:
             try:
                 # Simplified task processing flow
-                task_item = await self._get_next_task(worker_id, last_activity, idle_log_interval, self.log_idle_workers)
+                task_item = await self._get_next_task(
+                    worker_id, last_activity, idle_log_interval, self.log_idle_workers
+                )
                 if task_item is None:
                     continue
 
@@ -246,6 +246,7 @@ class WorkerPool:
                 try:
                     # Try to call with cache metadata first, fall back to old signature for backward compatibility
                     import inspect
+
                     sig = inspect.signature(self.on_task_complete)
                     if len(sig.parameters) >= 4:  # Has from_cache parameter
                         await self.on_task_complete(completed_task_id, task_info, task_result, from_cache)
@@ -304,10 +305,10 @@ class WorkerPool:
     async def cancel_running_task(self, task_id: str) -> bool:
         """
         Cancel a task that is currently running in a worker.
-        
+
         This method focuses only on finding and canceling the actual running task
         in asyncio. Task state updates are handled through callbacks.
-        
+
         The cancellation process is atomic and thread-safe, ensuring that
         the task state is checked and modified under a lock to prevent race conditions.
 
@@ -325,7 +326,7 @@ class WorkerPool:
             if not worker_task:
                 logger.warning(f"Worker task for {task_id} not found in running tasks")
                 return False
-                
+
             # Check if task is already done before attempting to cancel
             if worker_task.done():
                 logger.info(f"Task {task_id} is already completed, cannot cancel")
@@ -339,9 +340,9 @@ class WorkerPool:
             # Task exists and is running - cancel it
             logger.info(f"Cancelling running task {task_id}")
             worker_task.cancel()
-            
+
             # Task references are cleaned up in the worker task's finally block
-            
+
             return True
 
     @property

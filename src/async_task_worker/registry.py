@@ -3,6 +3,7 @@ Task Registry System
 
 This module provides a task registration system with manual registration.
 """
+
 import inspect
 import logging
 import threading
@@ -12,7 +13,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, TypeVar
 logger = logging.getLogger(__name__)
 
 # Type definitions
-T = TypeVar('T')  # Used for generic task function return type
+T = TypeVar("T")  # Used for generic task function return type
 TaskFunc = Callable[..., Awaitable[T]]
 
 # Global task registry

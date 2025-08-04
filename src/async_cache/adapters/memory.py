@@ -33,10 +33,10 @@ class MemoryCacheAdapter(CacheAdapter):
     async def get(self, key: str) -> Tuple[bool, Any]:
         """
         Get a value from the cache with TTL support.
-        
+
         Args:
             key: The cache key
-            
+
         Returns:
             Tuple of (hit, value) where hit is True if the item was in cache and not expired
         """
@@ -62,7 +62,7 @@ class MemoryCacheAdapter(CacheAdapter):
     async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
         """
         Set a value in the cache with TTL support.
-        
+
         Args:
             key: The cache key
             value: The value to store
@@ -85,10 +85,10 @@ class MemoryCacheAdapter(CacheAdapter):
     async def delete(self, key: str) -> bool:
         """
         Delete a value from the cache.
-        
+
         Args:
             key: The cache key
-            
+
         Returns:
             True if deleted, False if not found
         """
@@ -108,7 +108,7 @@ class MemoryCacheAdapter(CacheAdapter):
     def _evict_one(self) -> None:
         """
         Evict the least recently used item from the cache.
-        
+
         Note: This method should only be called with the lock held.
         """
         if not self._access_times:

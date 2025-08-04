@@ -169,14 +169,10 @@ class TaskFutureManager:
         if task_info.status == TaskStatus.COMPLETED:
             await self.set_result(task_id, task_info.result)
         elif task_info.status == TaskStatus.FAILED:
-            await self.set_exception(
-                task_id,
-                TaskExecutionError(task_info.error or "Unknown error", task_id=task_id)
-            )
+            await self.set_exception(task_id, TaskExecutionError(task_info.error or "Unknown error", task_id=task_id))
         elif task_info.status == TaskStatus.CANCELLED:
             await self.set_exception(
-                task_id,
-                TaskCancellationError(task_info.error or "Task cancelled", task_id=task_id)
+                task_id, TaskCancellationError(task_info.error or "Task cancelled", task_id=task_id)
             )
 
     async def cancel_future(self, task_id: str) -> bool:

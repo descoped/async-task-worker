@@ -64,7 +64,7 @@ async def cpu_task(iterations=10000, progress_callback=None):
     result = 0
     for i in range(iterations):
         # CPU-bound work
-        result += i ** 2
+        result += i**2
         if i % (iterations // 10) == 0:
             if progress_callback:
                 progress_callback(i / iterations)
@@ -154,22 +154,13 @@ async def test_priority_handling(workers=5, task_count=30):
             return {"name": name_, "time": time.time() - start_time}
 
         # Add tasks with different priorities in mixed order
-        priorities = {
-            "high": 1,
-            "medium": 5,
-            "low": 10
-        }
+        priorities = {"high": 1, "medium": 5, "low": 10}
 
         for priority_name, priority_value in priorities.items():
             task_data[priority_name] = {"ids": [], "times": []}
             for i in range(task_count // 3):
                 name = f"{priority_name}_{i}"
-                task_id = await worker.add_task(
-                    priority_task,
-                    name,
-                    0.2,
-                    priority=priority_value
-                )
+                task_id = await worker.add_task(priority_task, name, 0.2, priority=priority_value)
                 task_data[priority_name]["ids"].append(task_id)
 
         # Collect all task IDs
@@ -195,8 +186,11 @@ async def test_priority_handling(workers=5, task_count=30):
                 print(f"{priority_name.capitalize()}: {avg_time:.3f}s")
 
         # Check if priorities were respected
-        if (task_data["high"]["times"] and task_data["low"]["times"] and
-                min(task_data["high"]["times"]) < min(task_data["low"]["times"])):
+        if (
+            task_data["high"]["times"]
+            and task_data["low"]["times"]
+            and min(task_data["high"]["times"]) < min(task_data["low"]["times"])
+        ):
             print("✓ Priority system working correctly")
         else:
             print("❌ Priority issues detected")
@@ -219,11 +213,7 @@ async def test_long_running_tasks(workers=3, task_count=6):
         # Add long-running tasks
         for i in range(task_count):
             duration = random.uniform(2, 5)
-            task_id = await worker.add_task(
-                long_task,
-                duration,
-                metadata={"expected_duration": duration}
-            )
+            task_id = await worker.add_task(long_task, duration, metadata={"expected_duration": duration})
             task_ids.append(task_id)
 
         # Wait and monitor progress
@@ -253,12 +243,7 @@ async def test_failing_tasks(workers=5, task_count=20):
         for _ in range(task_count):
             fail_prob = random.uniform(0, 0.7)
             expected_failures += fail_prob
-            task_id = await worker.add_task(
-                long_task,
-                0.5,
-                fail_prob,
-                metadata={"failure_probability": fail_prob}
-            )
+            task_id = await worker.add_task(long_task, 0.5, fail_prob, metadata={"failure_probability": fail_prob})
             task_ids.append(task_id)
 
         # Wait for completion
@@ -317,9 +302,11 @@ async def monitor_tasks(worker, task_ids, timeout=30, interval=0.5, print_progre
         if print_progress and current_time - last_progress_time >= 1.0:
             avg_progress = total_progress / len(task_ids) * 100
             elapsed = current_time - start_time
-            print(f"Progress: {avg_progress:.1f}% after {elapsed:.1f}s | "
-                  f"Running: {statuses.get(TaskStatus.RUNNING, 0)}, "
-                  f"Pending: {statuses.get(TaskStatus.PENDING, 0)}")
+            print(
+                f"Progress: {avg_progress:.1f}% after {elapsed:.1f}s | "
+                f"Running: {statuses.get(TaskStatus.RUNNING, 0)}, "
+                f"Pending: {statuses.get(TaskStatus.PENDING, 0)}"
+            )
             last_progress_time = current_time
 
         # Short sleep before checking again
@@ -383,7 +370,7 @@ async def main():
         "priority": test_priority_handling,
         "longrun": test_long_running_tasks,
         "failures": test_failing_tasks,
-        "all": run_all_tests
+        "all": run_all_tests,
     }
 
     # Run the selected scenario if it exists

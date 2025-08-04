@@ -2,25 +2,22 @@ import asyncio
 import logging
 import uuid
 from contextlib import AsyncExitStack
-from typing import Dict, Any, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 import pytest
 
 # Import event system components
 from async_events import GroupFilter, event_manager
+
 # Import AsyncTaskWorker components
-from async_task_worker import AsyncTaskWorker, task, TaskStatus, TaskInfo
+from async_task_worker import AsyncTaskWorker, TaskInfo, TaskStatus, task
 
 logger = logging.getLogger("async_task_worker_tests")
 
 
 # Define task registration
 @task("computation_task")
-async def computation_task(
-        data: Dict[str, Any],
-        computation_id: str,
-        delay: float = 0.5
-) -> Dict[str, Any]:
+async def computation_task(data: Dict[str, Any], computation_id: str, delay: float = 0.5) -> Dict[str, Any]:
     """
     Example computation task that reports its progress
     and publishes events through the event system.
@@ -43,11 +40,7 @@ async def computation_task(
         progress = step / total_steps
 
         # Add step result
-        step_result = {
-            "step": step,
-            "input": data.get("input", 0) * step,
-            "timestamp": asyncio.get_event_loop().time()
-        }
+        step_result = {"step": step, "input": data.get("input", 0) * step, "timestamp": asyncio.get_event_loop().time()}
         result["steps"].append(step_result)
 
         # Publish step completion event
@@ -56,12 +49,10 @@ async def computation_task(
             "step": step,
             "total_steps": total_steps,
             "progress": progress,
-            "step_result": step_result
+            "step_result": step_result,
         }
         await event_manager.publish_event(
-            event_id=f"{computation_id}_step_{step}",
-            group_id=computation_id,
-            event_data=event_data
+            event_id=f"{computation_id}_step_{step}", group_id=computation_id, event_data=event_data
         )
 
         logger.info(f"Completed step {step}/{total_steps} for computation {computation_id}")
@@ -70,15 +61,9 @@ async def computation_task(
     result["status"] = "completed"
 
     # Publish completion event
-    completion_event = {
-        "computation_id": computation_id,
-        "status": "completed",
-        "result": result
-    }
+    completion_event = {"computation_id": computation_id, "status": "completed", "result": result}
     await event_manager.publish_event(
-        event_id=f"{computation_id}_completed",
-        group_id=computation_id,
-        event_data=completion_event
+        event_id=f"{computation_id}_completed", group_id=computation_id, event_data=completion_event
     )
 
     logger.info(f"Computation task {computation_id} completed successfully")
@@ -112,9 +97,7 @@ async def configure_task_worker_events(worker: AsyncTaskWorker) -> asyncio.Task:
         # Get tasks for each status concurrently
         async with asyncio.TaskGroup() as tg:
             for status in terminal_statuses:
-                tasks_by_status[status] = tg.create_task(
-                    worker.get_all_tasks(status=status)
-                )
+                tasks_by_status[status] = tg.create_task(worker.get_all_tasks(status=status))
 
         # Process results
         all_tasks = []
@@ -146,7 +129,7 @@ async def configure_task_worker_events(worker: AsyncTaskWorker) -> asyncio.Task:
             "task_id": task_id,
             "computation_id": computation_id,
             "status": task_info.status,
-            "timestamp": asyncio.get_event_loop().time()
+            "timestamp": asyncio.get_event_loop().time(),
         }
 
         # Add status-specific data
@@ -158,11 +141,7 @@ async def configure_task_worker_events(worker: AsyncTaskWorker) -> asyncio.Task:
             event_data["reason"] = task_info.cancel_reason
 
         # Publish event
-        await event_manager.publish_event(
-            event_id=task_id,
-            group_id=computation_id,
-            event_data=event_data
-        )
+        await event_manager.publish_event(event_id=task_id, group_id=computation_id, event_data=event_data)
 
         logger.info(f"Published {task_info.status} event for task {task_id}")
 
@@ -257,9 +236,7 @@ class EventSubscription:
             logger.info(f"Unsubscribed from events: {self.subscriber_id}")
             self.subscriber_id = None
 
-    async def collect_events(self, *,
-                             until_condition=None,
-                             timeout: float = 10.0) -> List[Dict[str, Any]]:
+    async def collect_events(self, *, until_condition=None, timeout: float = 10.0) -> List[Dict[str, Any]]:
         """
         Collect events using structured concurrency, stopping when condition is met.
 
@@ -352,7 +329,7 @@ async def worker():
         cache_enabled=False,
         max_queue_size=10,
         task_retention_days=1,
-        cleanup_interval=60
+        cleanup_interval=60,
     )
 
     # Use AsyncExitStack for proper resource cleanup
@@ -396,7 +373,7 @@ async def test_task_with_events(worker):
             data={"input": 10},
             computation_id=computation_id,
             delay=0.2,  # Faster for tests
-            metadata={"computation_id": computation_id}
+            metadata={"computation_id": computation_id},
         )
 
         # Get the future for the task result
@@ -404,10 +381,7 @@ async def test_task_with_events(worker):
 
         # Start event collection task
         event_collection_task = asyncio.create_task(
-            event_sub.collect_events(
-                until_condition=lambda e: e.get("status") == "completed",
-                timeout=5.0
-            )
+            event_sub.collect_events(until_condition=lambda e: e.get("status") == "completed", timeout=5.0)
         )
 
         # Wait for the task to complete
@@ -454,7 +428,7 @@ async def test_task_cancellation_with_events(worker):
             data={"input": 20},
             computation_id=computation_id,
             delay=0.5,  # Longer to ensure we can cancel
-            metadata={"computation_id": computation_id}
+            metadata={"computation_id": computation_id},
         )
 
         # Wait a bit to let the task start using asyncio.sleep
@@ -475,29 +449,23 @@ async def test_task_cancellation_with_events(worker):
             "computation_id": computation_id,
             "status": TaskStatus.CANCELLED,
             "timestamp": asyncio.get_event_loop().time(),
-            "reason": "Task cancelled for testing"
+            "reason": "Task cancelled for testing",
         }
 
         await event_manager.publish_event(
-            event_id=f"{task_id}_cancelled",
-            group_id=computation_id,
-            event_data=event_data
+            event_id=f"{task_id}_cancelled", group_id=computation_id, event_data=event_data
         )
 
         # Collect events until we find a cancellation or timeout
         events = await event_sub.collect_events(
-            until_condition=lambda e: e.get("status") == TaskStatus.CANCELLED,
-            timeout=3.0
+            until_condition=lambda e: e.get("status") == TaskStatus.CANCELLED, timeout=3.0
         )
 
         # We should have at least one event
         assert len(events) >= 1
 
         # Find cancellation event
-        cancellation_events = [
-            e for e in events
-            if e.get("status") == TaskStatus.CANCELLED
-        ]
+        cancellation_events = [e for e in events if e.get("status") == TaskStatus.CANCELLED]
         assert len(cancellation_events) >= 1
 
 
@@ -522,7 +490,7 @@ async def test_multiple_tasks_with_event_filtering(worker):
                     data={"input": 10},
                     computation_id=computation_id_1,
                     delay=0.2,
-                    metadata={"computation_id": computation_id_1}
+                    metadata={"computation_id": computation_id_1},
                 )
             )
 
@@ -532,7 +500,7 @@ async def test_multiple_tasks_with_event_filtering(worker):
                     data={"input": 20},
                     computation_id=computation_id_2,
                     delay=0.2,
-                    metadata={"computation_id": computation_id_2}
+                    metadata={"computation_id": computation_id_2},
                 )
             )
 
@@ -547,17 +515,11 @@ async def test_multiple_tasks_with_event_filtering(worker):
 
             # Collect events for both subscriptions
             _events1_collection = tg.create_task(
-                event_sub_1.collect_events(
-                    until_condition=lambda e: e.get("status") == "completed",
-                    timeout=3.0
-                )
+                event_sub_1.collect_events(until_condition=lambda e: e.get("status") == "completed", timeout=3.0)
             )
 
             _events2_collection = tg.create_task(
-                event_sub_2.collect_events(
-                    until_condition=lambda e: e.get("status") == "completed",
-                    timeout=3.0
-                )
+                event_sub_2.collect_events(until_condition=lambda e: e.get("status") == "completed", timeout=3.0)
             )
 
         # Get results
@@ -588,7 +550,7 @@ async def test_historical_events(worker):
         data={"input": 30},
         computation_id=computation_id,
         delay=0.1,  # Fast for quick completion
-        metadata={"computation_id": computation_id}
+        metadata={"computation_id": computation_id},
     )
 
     # Get the future and await the result
@@ -600,17 +562,11 @@ async def test_historical_events(worker):
     await asyncio.sleep(0.5)
 
     # Create a mock completion event to ensure it's available
-    completion_event = {
-        "computation_id": computation_id,
-        "status": "completed",
-        "result": result
-    }
+    completion_event = {"computation_id": computation_id, "status": "completed", "result": result}
 
     # Manually add this event to the event manager
     await event_manager.publish_event(
-        event_id=f"{computation_id}_completion",
-        group_id=computation_id,
-        event_data=completion_event
+        event_id=f"{computation_id}_completion", group_id=computation_id, event_data=completion_event
     )
 
     # NOW subscribe to events for this computation
@@ -631,9 +587,10 @@ async def test_historical_events(worker):
 
         # Should include the completion event (which we manually published)
         completion_events = [
-            e for e in historical_events
-            if e.get("status") == "completed" or
-               (isinstance(e.get("result"), dict) and e.get("result", {}).get("status") == "completed")
+            e
+            for e in historical_events
+            if e.get("status") == "completed"
+            or (isinstance(e.get("result"), dict) and e.get("result", {}).get("status") == "completed")
         ]
         assert len(completion_events) >= 1
 
@@ -648,7 +605,7 @@ if __name__ == "__main__":
             cache_enabled=False,
             max_queue_size=10,
             task_retention_days=1,
-            cleanup_interval=60
+            cleanup_interval=60,
         )
 
         # Use AsyncExitStack for proper cleanup
@@ -693,7 +650,6 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"Test failed: {e}")
                 raise
-
 
     # Run asyncio event loop
     asyncio.run(run_tests())

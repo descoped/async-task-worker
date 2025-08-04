@@ -10,9 +10,9 @@ import hashlib
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Tuple, Set, Iterator
+from typing import Any, Dict, Iterator, Optional, Set, Tuple
 
-from async_cache.exceptions import SerializationError, InvalidCacheKeyError
+from async_cache.exceptions import InvalidCacheKeyError, SerializationError
 from async_cache.key_utils import CacheKeyContext, CacheKeyFn
 from async_cache.serialization import MsgPackSerializer
 
@@ -72,66 +72,66 @@ class CacheAdapter(ABC):
 class AsyncCache:
     """
     Async cache manager with customizable key generation.
-    
+
     Features:
     - Supports multiple cache backends through adapter interface
-    - Thread-safe and async-ready 
+    - Thread-safe and async-ready
     - Customizable key generation
     - Automatic cleanup of stale mappings
     - TTL support
     - Comprehensive serialization
-    
+
     Examples:
         Basic usage:
-        
+
         ```python
         # Create a cache with memory adapter
         cache = AsyncCache(MemoryCacheAdapter())
-        
+
         # Store a result in the cache
         await cache.set("my_function", args=(1, 2), kwargs={"a": "b"}, result="result")
-        
+
         # Retrieve from cache
         hit, value = await cache.get("my_function", args=(1, 2), kwargs={"a": "b"})
         ```
-        
+
         With custom key function:
-        
+
         ```python
         # Define a custom key function based on version
         def version_key(context):
             return f"v{context['metadata']['version']}"
-            
+
         # Store with custom key function and metadata
         await cache.set("get_user", args=(), kwargs={}, result="result",
                        metadata={"version": "1.2"}, cache_key_fn=version_key)
         ```
-        
+
         With composed key functions:
-        
+
         ```python
         # Create component extractors
         user_key = extract_key_component("kwargs.user_id")
         version_key = extract_key_component("metadata.version")
-        
+
         # Compose them into a single key function
         combined_key = compose_key_functions(user_key, version_key)
-        
+
         # Use the composite key function
-        await cache.set("get_data", args=(), kwargs={"user_id": 123}, 
+        await cache.set("get_data", args=(), kwargs={"user_id": 123},
                        result="result", metadata={"version": "1.0"},
                        cache_key_fn=combined_key)
         ```
     """
 
     def __init__(
-            self,
-            adapter: CacheAdapter,
-            default_ttl: Optional[int] = None,
-            enabled: bool = True,
-            max_serialized_size: int = 10 * 1024 * 1024,  # 10 MB default
-            validate_keys: bool = False,
-            cleanup_interval: int = 900,  # 15 minutes default
+        self,
+        adapter: CacheAdapter,
+        default_ttl: Optional[int] = None,
+        enabled: bool = True,
+        max_serialized_size: int = 10 * 1024 * 1024,  # 10 MB default
+        validate_keys: bool = False,
+        cleanup_interval: int = 900,  # 15 minutes default
     ):
         """
         Initialize the cache.
@@ -164,8 +164,14 @@ class AsyncCache:
         # Flag to signal cleanup task to stop
         self._cleanup_running = False
 
-    def _build_context(self, fn_name: str, args: tuple, kwargs: dict, entry_id: Optional[str] = None,
-                       metadata: Optional[Dict[str, Any]] = None) -> CacheKeyContext:
+    def _build_context(
+        self,
+        fn_name: str,
+        args: tuple,
+        kwargs: dict,
+        entry_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> CacheKeyContext:
         """
         Build a context dictionary for cache key generation.
 
@@ -236,10 +242,10 @@ class AsyncCache:
     def _validate_key(self, key: str) -> None:
         """
         Validate a cache key for format and uniqueness.
-        
+
         Args:
             key: The cache key to validate
-            
+
         Raises:
             InvalidCacheKeyError: If the key is invalid or already in use
         """
@@ -261,9 +267,9 @@ class AsyncCache:
     def temporarily_disabled(self) -> Iterator[None]:
         """
         Context manager that temporarily disables the cache.
-        
+
         Example:
-        
+
         ```python
         # Temporarily disable the cache
         with cache.temporarily_disabled():
@@ -272,7 +278,7 @@ class AsyncCache:
             # All cache lookups will return misses
             hit, _ = await cache.get("func", args=(), kwargs={})  # hit will be False
         ```
-        
+
         Yields:
             None
         """
@@ -284,13 +290,13 @@ class AsyncCache:
             self.enabled = original_state
 
     async def get(
-            self,
-            fn_name: str,
-            args: tuple,
-            kwargs: dict,
-            cache_key_fn: Optional[CacheKeyFn] = None,
-            entry_id: Optional[str] = None,
-            metadata: Optional[Dict[str, Any]] = None
+        self,
+        fn_name: str,
+        args: tuple,
+        kwargs: dict,
+        cache_key_fn: Optional[CacheKeyFn] = None,
+        entry_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Tuple[bool, Any]:
         """
         Get cached result.
@@ -305,7 +311,7 @@ class AsyncCache:
 
         Returns:
             Tuple of (cache_hit, result)
-            
+
         Raises:
             InvalidCacheKeyError: If key validation is enabled and the key is invalid
         """
@@ -344,15 +350,15 @@ class AsyncCache:
             return False, None
 
     async def set(
-            self,
-            fn_name: str,
-            args: tuple,
-            kwargs: dict,
-            result: Any,
-            ttl: Optional[int] = None,
-            cache_key_fn: Optional[CacheKeyFn] = None,
-            entry_id: Optional[str] = None,
-            metadata: Optional[Dict[str, Any]] = None
+        self,
+        fn_name: str,
+        args: tuple,
+        kwargs: dict,
+        result: Any,
+        ttl: Optional[int] = None,
+        cache_key_fn: Optional[CacheKeyFn] = None,
+        entry_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Store result in cache.
@@ -369,7 +375,7 @@ class AsyncCache:
 
         Returns:
             True if successfully cached, False otherwise
-            
+
         Raises:
             InvalidCacheKeyError: If key validation is enabled and the key is invalid
         """
@@ -380,10 +386,7 @@ class AsyncCache:
             # Try to serialize the result.
             # By default, do not use string fallback to ensure proper round-trip serialization
             try:
-                serialized = MsgPackSerializer.encode(
-                    result,
-                    fallback=self.fallback_to_str
-                )
+                serialized = MsgPackSerializer.encode(result, fallback=self.fallback_to_str)
 
                 # If fallback is enabled, add a warning log to help diagnose potential issues
                 if self.fallback_to_str:
@@ -431,13 +434,13 @@ class AsyncCache:
             return False
 
     async def invalidate(
-            self,
-            fn_name: str,
-            args: tuple,
-            kwargs: dict,
-            cache_key_fn: Optional[CacheKeyFn] = None,
-            entry_id: Optional[str] = None,
-            metadata: Optional[Dict[str, Any]] = None
+        self,
+        fn_name: str,
+        args: tuple,
+        kwargs: dict,
+        cache_key_fn: Optional[CacheKeyFn] = None,
+        entry_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Invalidate a specific cache entry.
@@ -452,7 +455,7 @@ class AsyncCache:
 
         Returns:
             True if invalidated, False if not found
-            
+
         Raises:
             InvalidCacheKeyError: If key validation is enabled and the key is invalid
         """
@@ -539,9 +542,9 @@ class AsyncCache:
     async def get_id_key_mapping(self) -> Dict[str, str]:
         """
         Get a copy of the current entry ID to cache key mapping.
-        
+
         Useful for diagnostics or high-performance operations.
-        
+
         Returns:
             Dictionary mapping entry IDs to cache keys
         """
@@ -564,11 +567,11 @@ class AsyncCache:
     async def start_cleanup_task(self) -> None:
         """
         Start the periodic cleanup task to remove stale entry ID mappings.
-        
+
         This task runs in the background at the interval specified in the constructor
         and removes any entry_id -> key mappings where the key no longer exists in the cache,
         preventing memory leaks from expired or deleted cache entries.
-        
+
         The task only runs if cleanup_interval > 0.
         """
         if self.cleanup_interval <= 0 or self._cleanup_task is not None:
@@ -580,7 +583,7 @@ class AsyncCache:
     async def stop_cleanup_task(self) -> None:
         """
         Stop the periodic cleanup task.
-        
+
         This method should be called when shutting down the cache to properly
         clean up the background task.
         """
@@ -602,7 +605,7 @@ class AsyncCache:
         """
         backoff_delay = 5  # Start with 5 seconds before retry
         max_backoff = 300  # Maximum backoff of 5 minutes
-        
+
         while self._cleanup_running:
             try:
                 await asyncio.sleep(self.cleanup_interval)
@@ -615,7 +618,7 @@ class AsyncCache:
             except Exception as e:
                 # Log the error but don't crash
                 logger.error(f"Error in cache cleanup task: {str(e)}")
-                
+
                 if self._cleanup_running:
                     # Wait before retrying with exponential backoff
                     logger.info(f"Cleanup task will retry in {backoff_delay} seconds")
@@ -626,7 +629,7 @@ class AsyncCache:
     async def _cleanup_stale_mappings(self) -> None:
         """
         Remove any entry_id -> key mappings where the key no longer exists in the cache.
-        
+
         This prevents memory leaks from expired cache entries.
         """
         # Check if map is empty (with lock to avoid race condition)

@@ -97,7 +97,8 @@ async def wait_for_status(worker, task_id, status, timeout=1.0):
                         return True
                     elif task_info.is_terminal_state():
                         logger.warning(
-                            f"Task {task_id} reached terminal state {task_info.status} before target {status}.")
+                            f"Task {task_id} reached terminal state {task_info.status} before target {status}."
+                        )
                         return False
                 else:
                     logger.warning(f"Task {task_id} not found.")
@@ -184,8 +185,9 @@ async def test_task_cancellation(worker):
     assert success is True, "Task cancellation should return True"
 
     # Verify cancellation
-    assert await wait_for_status(worker, task_id, TaskStatus.CANCELLED,
-                                 timeout=1.0), "Task should reach CANCELLED state"
+    assert await wait_for_status(worker, task_id, TaskStatus.CANCELLED, timeout=1.0), (
+        "Task should reach CANCELLED state"
+    )
 
 
 @pytest.mark.asyncio
@@ -333,7 +335,7 @@ async def test_cached_task_completion_callbacks(worker):
         # Verify both tasks have same result but different IDs
         task_info_1 = await worker.get_task_info(first_id)
         task_info_2 = await worker.get_task_info(second_id)
-        
+
         assert task_info_1.result == task_info_2.result
         assert task_info_1.status == TaskStatus.COMPLETED
         assert task_info_2.status == TaskStatus.COMPLETED
@@ -344,7 +346,7 @@ async def test_cached_task_completion_callbacks(worker):
         worker.worker_pool.on_task_complete = original_pool_callback
 
 
-@pytest.mark.asyncio 
+@pytest.mark.asyncio
 async def test_cached_task_futures_completion(worker):
     """Test that futures are properly completed for cached tasks"""
     # Execute task once to populate cache
@@ -354,14 +356,14 @@ async def test_cached_task_futures_completion(worker):
 
     # Execute same task again with same args (should use cache)
     second_id = await worker.add_task(fast_task, *args)
-    
+
     # Get future for cached task
     future = await worker.get_task_future(second_id)
-    
+
     # Future should resolve with cached result
     result = await future
     assert result["value"] == "cached_future_test"
-    
+
     # Task status should be completed
     task_info = await worker.get_task_info(second_id)
     assert task_info.status == TaskStatus.COMPLETED
@@ -383,11 +385,11 @@ async def test_cache_metadata_flag(worker):
     # Get both task infos
     first_task = await worker.get_task_info(first_id)
     second_task = await worker.get_task_info(second_id)
-    
+
     # Verify cache metadata
     assert first_task.from_cache is False  # First execution should not be from cache
     assert second_task.from_cache is True  # Second execution should be from cache
-    
+
     # Both should have same result
     assert first_task.result == second_task.result
     assert first_task.result["value"] == "cache_metadata_test"
@@ -409,15 +411,15 @@ async def test_cache_metadata_in_serialization(worker):
     all_tasks = await worker.get_all_tasks()
     first_task = next(t for t in all_tasks if t.id == first_id)
     second_task = next(t for t in all_tasks if t.id == second_id)
-    
+
     # Verify cache metadata in serialized tasks
     assert first_task.from_cache is False
     assert second_task.from_cache is True
-    
+
     # Test to_dict serialization
     first_dict = first_task.to_dict()
     second_dict = second_task.to_dict()
-    
+
     assert "from_cache" in first_dict
     assert "from_cache" in second_dict
     assert first_dict["from_cache"] is False
@@ -557,7 +559,7 @@ async def test_graceful_shutdown_with_pending_tasks(worker):
         # Stop the worker with a short timeout - the worker should attempt to cancel pending tasks
         await worker.stop(timeout=0.2)
 
-        # We no longer assert specific task states after shutdown since the worker may not 
+        # We no longer assert specific task states after shutdown since the worker may not
         # guarantee the state of all tasks. The test verifies that the worker shuts down
         # gracefully without errors, which is the primary concern.
     finally:
@@ -688,7 +690,7 @@ async def test_task_callback_parameters():
     """Test that task status callbacks handle task_info parameter correctly"""
     # Create a custom worker to verify task_info callbacks
     mock_results = {}
-    
+
     # Create a subclass of AsyncTaskWorker that captures task_info
     class CallbackTestWorker(AsyncTaskWorker):
         async def _on_task_started(self, task_id_, task_info_, _):
@@ -701,31 +703,27 @@ async def test_task_callback_parameters():
             mock_results["complete_task_info"] = task_info_
             mock_results["result"] = result
             await super()._on_task_completed(task_id_, task_info_, result)
-    
+
     # Create worker with our instrumented callbacks
-    worker = CallbackTestWorker(
-        max_workers=1, 
-        worker_poll_interval=0.01, 
-        cache_enabled=False
-    )
-    
+    worker = CallbackTestWorker(max_workers=1, worker_poll_interval=0.01, cache_enabled=False)
+
     await worker.start()
-    
+
     try:
         # Run a simple task
         task_id = await worker.add_task(fast_task, 0.01, "mock_test")
-        
+
         # Wait for completion
         assert await wait_for_status(worker, task_id, TaskStatus.COMPLETED, timeout=1.0)
-        
+
         # Verify results were captured by our callbacks
         assert "start_task_id" in mock_results, "Start callback was not called"
         assert "complete_task_id" in mock_results, "Complete callback was not called"
-        
+
         # Check the callback parameters
         assert mock_results["start_task_id"] == task_id
         assert mock_results["start_task_info"] is None, "task_info should be None in callbacks"
-        
+
         assert mock_results["complete_task_id"] == task_id
         assert mock_results["complete_task_info"] is None, "task_info should be None in callbacks"
         assert mock_results["result"]["value"] == "mock_test"
@@ -738,10 +736,10 @@ async def test_worker_pool_callback_integration():
     """Test the integration between WorkerPool and AsyncTaskWorker callbacks"""
     # Create a mock TaskInfo to verify that it IS being passed through to callbacks
     mock_task_info = TaskInfo(id="mock_id", status=TaskStatus.PENDING, created_at=datetime.now())
-    
+
     # Create tracking variables to check callback behavior
     received_params = {}
-    
+
     # Create a custom AsyncTaskWorker with tracking callbacks
     class TestWorker(AsyncTaskWorker):
         async def _on_task_started(self, task_id, task_info, _):
@@ -749,33 +747,33 @@ async def test_worker_pool_callback_integration():
             received_params["worker_start_task_info"] = task_info
             # Call the original implementation
             await super()._on_task_started(task_id, task_info, _)
-            
+
         async def _on_task_completed(self, task_id, task_info, result):
             received_params["worker_complete_task_id"] = task_id
             received_params["worker_complete_task_info"] = task_info
             received_params["worker_result"] = result
             # Call the original implementation
             await super()._on_task_completed(task_id, task_info, result)
-    
+
     # Create worker instance
     worker = TestWorker(max_workers=1, worker_poll_interval=0.01, cache_enabled=False)
     await worker.start()
-    
+
     try:
         # Directly invoke worker pool callbacks with mock task_info to simulate external callbacks
         await worker.worker_pool.on_task_start("direct_id", mock_task_info, None)
         await worker.worker_pool.on_task_complete("direct_id", mock_task_info, {"test": "value"})
-        
+
         # Check that the worker received both the task_id and task_info parameters
         assert received_params["worker_start_task_id"] == "direct_id"
         # task_info IS passed through from the worker pool to callbacks
         assert received_params["worker_start_task_info"] is mock_task_info
-        
-        assert received_params["worker_complete_task_id"] == "direct_id" 
+
+        assert received_params["worker_complete_task_id"] == "direct_id"
         # task_info IS the original mock_task_info
         assert received_params["worker_complete_task_info"] is mock_task_info
         assert received_params["worker_result"] == {"test": "value"}
-        
+
         # But the docstring says task_info is unused in AsyncTaskWorker's own implementation
         # because it maintains its own task_info in the tasks dict with the same keys
     finally:
@@ -787,53 +785,57 @@ async def test_real_task_execution_callback_flow():
     """Test the complete flow of callbacks during normal task execution"""
     # Track the calls with detailed parameters
     callback_sequence = []
-    
+
     # Create a custom AsyncTaskWorker that tracks all callback invocations
     class CallbackTrackingWorker(AsyncTaskWorker):
         async def _on_task_started(self, task_id_, task_info_, _):
-            callback_sequence.append({
-                "event": "started",
-                "task_id": task_id_,
-                "task_info_type": type(task_info_).__name__ if task_info_ else None,
-                "task_info": task_info_
-            })
+            callback_sequence.append(
+                {
+                    "event": "started",
+                    "task_id": task_id_,
+                    "task_info_type": type(task_info_).__name__ if task_info_ else None,
+                    "task_info": task_info_,
+                }
+            )
             await super()._on_task_started(task_id_, task_info_, _)
-            
+
         async def _on_task_completed(self, task_id_, task_info_, result):
-            callback_sequence.append({
-                "event": "completed",
-                "task_id": task_id_,
-                "task_info_type": type(task_info_).__name__ if task_info_ else None,
-                "task_info": task_info_,
-                "result": result
-            })
+            callback_sequence.append(
+                {
+                    "event": "completed",
+                    "task_id": task_id_,
+                    "task_info_type": type(task_info_).__name__ if task_info_ else None,
+                    "task_info": task_info_,
+                    "result": result,
+                }
+            )
             await super()._on_task_completed(task_id_, task_info_, result)
-    
+
     # Create worker with our tracking callbacks
     worker = CallbackTrackingWorker(max_workers=1, worker_poll_interval=0.01)
     await worker.start()
-    
+
     try:
         # Run a simple task and wait for completion
         task_id = await worker.add_task(fast_task, 0.01, "callback_test")
         assert await wait_for_status(worker, task_id, TaskStatus.COMPLETED, timeout=1.0)
-        
+
         # Check the callback sequence
         assert len(callback_sequence) == 2, "Should have two callbacks: started and completed"
-        
+
         # Verify started callback
         start_event = callback_sequence[0]
         assert start_event["event"] == "started"
         assert start_event["task_id"] == task_id
         assert start_event["task_info"] is None, "WorkerPool should pass None for task_info"
-        
+
         # Verify completed callback
         complete_event = callback_sequence[1]
         assert complete_event["event"] == "completed"
         assert complete_event["task_id"] == task_id
         assert complete_event["task_info"] is None, "WorkerPool should pass None for task_info"
         assert complete_event["result"]["value"] == "callback_test"
-        
+
         # Verify AsyncTaskWorker maintained its own TaskInfo object
         task_info = await worker.get_task_info(task_id)
         assert task_info is not None

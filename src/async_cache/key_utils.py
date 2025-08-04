@@ -6,7 +6,7 @@ Provides functions for generating and composing cache keys.
 
 import functools
 from dataclasses import dataclass
-from typing import Any, Dict, Callable
+from typing import Any, Callable, Dict
 
 from async_cache.exceptions import InvalidCacheKeyError
 
@@ -20,6 +20,7 @@ CacheKeyFn = Callable[[CacheKeyContext], str]
 @dataclass
 class CacheKeyComponent:
     """A component of a cache key, used for composition."""
+
     name: str
     value: Any
 
@@ -27,22 +28,22 @@ class CacheKeyComponent:
 def compose_key_functions(*funcs: CacheKeyFn) -> CacheKeyFn:
     """
     Compose multiple key functions into a single function.
-    
+
     Args:
         *funcs: One or more cache key functions to compose
-        
+
     Returns:
         A new function that applies all key functions and joins the results
-        
+
     Example:
-    
+
     ```python
     # Create a composite key function from two lambdas
     key_fn = compose_key_functions(
         lambda ctx: ctx["func_name"],
         lambda ctx: str(ctx["kwargs"].get("user_id", "anonymous"))
     )
-    
+
     # Use it to generate a key
     key = key_fn({"func_name": "get_data", "kwargs": {"user_id": 123}})
     # key will be 'get_data:123'
@@ -66,19 +67,19 @@ def compose_key_functions(*funcs: CacheKeyFn) -> CacheKeyFn:
 def extract_key_component(key_path: str) -> CacheKeyFn:
     """
     Create a key function that extracts a component from the context.
-    
+
     Args:
         key_path: Dot-notation path to extract (e.g., "kwargs.user_id")
-        
+
     Returns:
         A function that extracts the value at the specified path
-        
+
     Example:
-        
+
     ```python
     # Create an extractor for a specific path
     key_fn = extract_key_component("kwargs.user_id")
-    
+
     # Use it to extract a value
     key = key_fn({"kwargs": {"user_id": 123}})
     # key will be '123'
@@ -103,21 +104,21 @@ def extract_key_component(key_path: str) -> CacheKeyFn:
 def key_component(name: str = None) -> Callable[[CacheKeyFn], CacheKeyFn]:
     """
     Decorator for creating named cache key components.
-    
+
     Args:
         name: Optional name for the component
-        
+
     Returns:
         A decorator function
-        
+
     Example:
-        
+
     ```python
     # Create a named component for version extraction
     @key_component("version")
     def version_key(context):
         return context.get("metadata", {}).get("version", "1.0")
-        
+
     # Using the decorated function
     key = version_key({"metadata": {"version": "2.0"}})
     # key will be 'version:2.0'

@@ -10,13 +10,7 @@ Components:
 - SSEClient: Client for consuming Server-Sent Events
 """
 
-from async_events.event_manager import EventManager, EventFilter, GroupFilter, event_manager
+from async_events.event_manager import EventFilter, EventManager, GroupFilter, event_manager
 from async_events.sse_client import SSEClient
 
-__all__ = [
-    "EventManager",
-    "EventFilter",
-    "GroupFilter",
-    "event_manager",
-    "SSEClient"
-]
+__all__ = ["EventManager", "EventFilter", "GroupFilter", "event_manager", "SSEClient"]

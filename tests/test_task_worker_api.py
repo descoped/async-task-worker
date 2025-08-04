@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from async_task_worker import AsyncTaskWorker, task, TaskStatus
+from async_task_worker import AsyncTaskWorker, TaskStatus, task
 from async_task_worker.api import create_task_worker_router
 
 
@@ -26,7 +26,7 @@ async def test_app():
     # (since we're mocking methods anyway)
     worker.running = True
     worker.workers = [MagicMock() for _ in range(3)]
-    
+
     # Mock queue with qsize as a property (for test)
     mock_queue = MagicMock()
     # Set qsize as a property, not a method
@@ -68,24 +68,21 @@ async def test_create_task(test_app):
 
     # Mock the add_task method
     worker.add_task = AsyncMock(return_value="test-task-id")
-    worker.get_task_info = AsyncMock(return_value=MagicMock(
-        id="test-task-id",
-        status=TaskStatus.PENDING,
-        progress=0.0,
-        metadata={"task_type": "test_addition"},
-        result=None,
-        error=None,
-        from_cache=False
-    ))
+    worker.get_task_info = AsyncMock(
+        return_value=MagicMock(
+            id="test-task-id",
+            status=TaskStatus.PENDING,
+            progress=0.0,
+            metadata={"task_type": "test_addition"},
+            result=None,
+            error=None,
+            from_cache=False,
+        )
+    )
 
     # Submit task
     response = client.post(
-        "/api/v1/tasks",
-        json={
-            "task_type": "test_addition",
-            "params": {"a": 5, "b": 7},
-            "priority": 1
-        }
+        "/api/v1/tasks", json={"task_type": "test_addition", "params": {"a": 5, "b": 7}, "priority": 1}
     )
 
     assert response.status_code == 201
@@ -100,13 +97,7 @@ async def test_create_task_invalid_type(test_app):
     client, _ = test_app
 
     # Test the API response for invalid task type
-    response = client.post(
-        "/api/v1/tasks",
-        json={
-            "task_type": "nonexistent_task",
-            "params": {}
-        }
-    )
+    response = client.post("/api/v1/tasks", json={"task_type": "nonexistent_task", "params": {}})
 
     assert response.status_code == 400  # Bad Request
 
@@ -124,7 +115,7 @@ async def test_get_task(test_app):
         metadata={"task_type": "test_addition"},
         result=12,
         error=None,
-        from_cache=True
+        from_cache=True,
     )
     worker.get_task_info = AsyncMock(return_value=task_info)
 
@@ -158,10 +149,7 @@ async def test_cancel_task(test_app):
     client, worker = test_app
 
     # Mock methods
-    task_info = MagicMock(
-        id="test-task-id",
-        status=TaskStatus.RUNNING
-    )
+    task_info = MagicMock(id="test-task-id", status=TaskStatus.RUNNING)
     worker.get_task_info = AsyncMock(return_value=task_info)
     worker.cancel_task = AsyncMock(return_value=True)
 
@@ -186,7 +174,7 @@ async def test_list_tasks(test_app):
         result=12,
         error=None,
         created_at=0,  # dummy value
-        from_cache=True
+        from_cache=True,
     )
     task2 = MagicMock(
         id="task-2",
@@ -196,7 +184,7 @@ async def test_list_tasks(test_app):
         result=None,
         error=None,
         created_at=0,  # dummy value
-        from_cache=False
+        from_cache=False,
     )
     # Use AsyncMock for get_all_tasks so it can be awaited.
     worker.get_all_tasks = AsyncMock(return_value=[task1, task2])
@@ -231,50 +219,56 @@ async def test_list_tasks(test_app):
 async def test_cache_metadata_in_api_responses(test_app):
     """Test that cache metadata is included in API responses."""
     client, worker = test_app
-    
+
     # Test create task response includes from_cache
     worker.add_task = AsyncMock(return_value="cached-task-id")
-    worker.get_task_info = AsyncMock(return_value=MagicMock(
-        id="cached-task-id",
-        status=TaskStatus.COMPLETED,
-        progress=1.0,
-        metadata={"task_type": "test_addition"},
-        result=15,
-        error=None,
-        from_cache=True
-    ))
-    
+    worker.get_task_info = AsyncMock(
+        return_value=MagicMock(
+            id="cached-task-id",
+            status=TaskStatus.COMPLETED,
+            progress=1.0,
+            metadata={"task_type": "test_addition"},
+            result=15,
+            error=None,
+            from_cache=True,
+        )
+    )
+
     response = client.post(
         "/api/v1/tasks",
         json={
             "task_type": "test_addition",
             "params": {"a": 8, "b": 7},
-        }
+        },
     )
-    
+
     assert response.status_code == 201
     data = response.json()
     assert "from_cache" in data
     assert data["from_cache"] is True
-    
+
     # Test get task response includes from_cache
     response = client.get("/api/v1/tasks/cached-task-id")
     assert response.status_code == 200
     data = response.json()
     assert "from_cache" in data
     assert data["from_cache"] is True
-    
+
     # Test list tasks response includes from_cache
-    worker.get_all_tasks = AsyncMock(return_value=[MagicMock(
-        id="cached-task-id",
-        status=TaskStatus.COMPLETED,
-        progress=1.0,
-        metadata={"task_type": "test_addition"},
-        result=15,
-        error=None,
-        from_cache=True
-    )])
-    
+    worker.get_all_tasks = AsyncMock(
+        return_value=[
+            MagicMock(
+                id="cached-task-id",
+                status=TaskStatus.COMPLETED,
+                progress=1.0,
+                metadata={"task_type": "test_addition"},
+                result=15,
+                error=None,
+                from_cache=True,
+            )
+        ]
+    )
+
     response = client.get("/api/v1/tasks")
     assert response.status_code == 200
     data = response.json()

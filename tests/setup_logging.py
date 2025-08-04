@@ -3,7 +3,7 @@ import logging.config
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Union, List, Any
+from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
@@ -26,7 +26,7 @@ class LoggerWriter:
             level_fn: The logging function to use (e.g., logger.info)
         """
         self._level_fn = level_fn
-        self._buf = ''
+        self._buf = ""
 
     def write(self, buf):
         """
@@ -102,8 +102,7 @@ def load_yaml_config(config_path: Path, log_to_file: bool = True, debug: bool = 
 
                 # Store handlers to remove
                 handlers_to_remove = [
-                    handler_name for handler_name, handler in config["handlers"].items()
-                    if "filename" in handler
+                    handler_name for handler_name, handler in config["handlers"].items() if "filename" in handler
                 ]
 
                 if debug and handlers_to_remove:
@@ -173,9 +172,7 @@ def apply_namespace_levels(namespace_levels: Dict[str, Union[int, str]]):
             e.g. {"agentic_boostai": "DEBUG", "urllib3": "WARNING"}
     """
     # Convert string level names to their numeric values
-    processed_levels = {
-        k: _convert_level(v) for k, v in namespace_levels.items()
-    }
+    processed_levels = {k: _convert_level(v) for k, v in namespace_levels.items()}
 
     # Apply levels to each namespace
     for namespace, level in processed_levels.items():
@@ -190,6 +187,7 @@ def apply_namespace_levels(namespace_levels: Dict[str, Union[int, str]]):
 @dataclass
 class LoggingConfig:
     """Configuration class for logging setup to reduce parameter overload."""
+
     root_level: Union[int, str] = None
     namespace_levels: Optional[Dict[str, Union[int, str]]] = None
     redirect_stdout: bool = False
@@ -254,11 +252,7 @@ def setup_logging(config: Union[LoggingConfig, Dict[str, Any]]) -> List[logging.
         if debug:
             print(f"Resolved config path: {yaml_config_path}")
 
-        yaml_config = load_yaml_config(
-            yaml_config_path,
-            log_to_file=config.log_to_file,
-            debug=debug
-        )
+        yaml_config = load_yaml_config(yaml_config_path, log_to_file=config.log_to_file, debug=debug)
 
         if yaml_config:
             # If log directory is specified and file logging is enabled
@@ -339,8 +333,7 @@ def setup_logging(config: Union[LoggingConfig, Dict[str, Any]]) -> List[logging.
 
 
 def setup_test_logging(
-        root_level: Union[int, str] = logging.INFO,
-        namespace_levels: Optional[Dict[str, Union[int, str]]] = None
+    root_level: Union[int, str] = logging.INFO, namespace_levels: Optional[Dict[str, Union[int, str]]] = None
 ) -> logging.StreamHandler:
     """
     Configure logging for tests with configurable log levels per namespace.

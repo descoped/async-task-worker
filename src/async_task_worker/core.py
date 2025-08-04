@@ -10,11 +10,11 @@ import logging
 import uuid
 import weakref
 from datetime import datetime, timedelta
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Self, TypeVar, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Self, Tuple, TypeVar
 
 from async_task_worker.adapters.cache_adapter import AsyncCacheAdapter
 from async_task_worker.exceptions import TaskError
-from async_task_worker.executor import TaskExecutor, CacheManager
+from async_task_worker.executor import CacheManager, TaskExecutor
 from async_task_worker.futures import TaskFutureManager
 from async_task_worker.pool import WorkerPool
 from async_task_worker.queue import TaskQueue
@@ -22,7 +22,7 @@ from async_task_worker.status import TaskInfo, TaskStatus
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T')  # Used for generic task function return type
+T = TypeVar("T")  # Used for generic task function return type
 
 
 class AsyncTaskWorker:
@@ -39,18 +39,18 @@ class AsyncTaskWorker:
     """
 
     def __init__(
-            self,
-            max_workers: int = 10,
-            task_timeout: Optional[float] = None,
-            worker_poll_interval: float = 1.0,
-            cache_enabled: bool = False,
-            cache_ttl: Optional[int] = 3600,  # 1 hour default
-            cache_max_size: Optional[int] = 1000,
-            cache_adapter: Optional[CacheManager] = None,
-            cache_cleanup_interval: int = 900,  # 15 minutes default
-            max_queue_size: Optional[int] = None,
-            task_retention_days: Optional[int] = 7,
-            cleanup_interval: int = 3600  # Cleanup every hour by default
+        self,
+        max_workers: int = 10,
+        task_timeout: Optional[float] = None,
+        worker_poll_interval: float = 1.0,
+        cache_enabled: bool = False,
+        cache_ttl: Optional[int] = 3600,  # 1 hour default
+        cache_max_size: Optional[int] = 1000,
+        cache_adapter: Optional[CacheManager] = None,
+        cache_cleanup_interval: int = 900,  # 15 minutes default
+        max_queue_size: Optional[int] = None,
+        task_retention_days: Optional[int] = 7,
+        cleanup_interval: int = 3600,  # Cleanup every hour by default
     ):
         """
         Initialize the task worker.
@@ -85,7 +85,7 @@ class AsyncTaskWorker:
                 max_serialized_size=10 * 1024 * 1024,
                 validate_keys=False,
                 cleanup_interval=cache_cleanup_interval,
-                max_size=cache_max_size
+                max_size=cache_max_size,
             )
 
         # Create task queue
@@ -106,7 +106,7 @@ class AsyncTaskWorker:
             on_task_start=self._on_task_started,
             on_task_complete=self._on_task_completed,
             on_task_failed=self._on_task_failed,
-            on_task_cancelled=self._on_task_cancelled
+            on_task_cancelled=self._on_task_cancelled,
         )
 
         # Configuration
@@ -213,16 +213,16 @@ class AsyncTaskWorker:
             logger.info("AsyncTaskWorker stopped gracefully")
 
     async def add_task(
-            self,
-            task_func: Callable[..., Awaitable[T]],
-            *args: Any,
-            priority: int = 0,
-            task_id: Optional[str] = None,
-            metadata: Optional[Dict[str, Any]] = None,
-            timeout: Optional[int] = None,
-            use_cache: bool = True,
-            cache_ttl: Optional[int] = None,
-            **kwargs: Any
+        self,
+        task_func: Callable[..., Awaitable[T]],
+        *args: Any,
+        priority: int = 0,
+        task_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        timeout: Optional[int] = None,
+        use_cache: bool = True,
+        cache_ttl: Optional[int] = None,
+        **kwargs: Any,
     ) -> str:
         """
         Add a new task to the queue and return its ID.
@@ -249,12 +249,7 @@ class AsyncTaskWorker:
             task_id = str(uuid.uuid4())
 
             # Create task info first under lock
-        task_info = TaskInfo(
-            id=task_id,
-            status=TaskStatus.PENDING,
-            created_at=datetime.now(),
-            metadata=metadata or {}
-        )
+        task_info = TaskInfo(id=task_id, status=TaskStatus.PENDING, created_at=datetime.now(), metadata=metadata or {})
 
         async with self.tasks_lock:
             self.tasks[task_id] = task_info
@@ -267,13 +262,13 @@ class AsyncTaskWorker:
         if cache_ttl is not None:
             kwargs["cache_ttl"] = cache_ttl
 
-        # For caching, we need to decide between normal caching (function+args based) 
+        # For caching, we need to decide between normal caching (function+args based)
         # and task-specific caching (task_id based for invalidation purposes)
         if use_cache and self.cache.enabled:
             # For normal caching, we should NOT include task_id in the cache key
             # This allows tasks with same function and arguments to share cache entries
             # Only use task_id for reverse mapping/invalidation purposes
-            if hasattr(self.cache, 'generate_entry_id'):
+            if hasattr(self.cache, "generate_entry_id"):
                 # We store the original task_id in metadata to keep track of it
                 if metadata is None:
                     metadata = {}
@@ -287,18 +282,16 @@ class AsyncTaskWorker:
                 kwargs["_cache_entry_id"] = entry_id
 
                 logger.debug(f"Generated composite cache entry ID: {entry_id} for task {task_id}")
-            
+
             # For the actual cache key, use a function that only considers function name and arguments
             # This ensures tasks with same function and args share cache entries regardless of task_id
             from async_cache.key_utils import compose_key_functions, extract_key_component
-            
+
             # Create a cache key function that only uses function name and arguments
             normal_cache_key_fn = compose_key_functions(
-                extract_key_component("func_name"),
-                extract_key_component("args"),
-                extract_key_component("kwargs")
+                extract_key_component("func_name"), extract_key_component("args"), extract_key_component("kwargs")
             )
-            
+
             # Store the normal cache key function for the executor to use
             kwargs["_normal_cache_key_fn"] = normal_cache_key_fn
 
@@ -320,21 +313,18 @@ class AsyncTaskWorker:
         """
         async with self.tasks_lock:
             return self.tasks.get(task_id)
-            
+
     def get_cache(self) -> AsyncCacheAdapter:
         """
         Get the cache adapter instance.
-        
+
         Returns:
             The cache adapter instance
         """
         return self.cache
 
     async def get_all_tasks(
-            self,
-            status: Optional[TaskStatus] = None,
-            limit: Optional[int] = None,
-            older_than: Optional[timedelta] = None
+        self, status: Optional[TaskStatus] = None, limit: Optional[int] = None, older_than: Optional[timedelta] = None
     ) -> List[TaskInfo]:
         """
         Get information about tasks, with optional filtering.
@@ -372,12 +362,7 @@ class AsyncTaskWorker:
         return results
 
     # noinspection PyProtectedMember
-    async def invalidate_cache(
-            self,
-            task_func: Callable,
-            *args: Any,
-            **kwargs: Any
-    ) -> bool:
+    async def invalidate_cache(self, task_func: Callable, *args: Any, **kwargs: Any) -> bool:
         """
         Invalidate cache for a specific task function and arguments.
 
@@ -396,7 +381,7 @@ class AsyncTaskWorker:
 
         # Handle case where a specific task_id is provided in kwargs
         task_id = kwargs.pop("_cache_entry_id", None)
-        if task_id and hasattr(self.cache, 'generate_entry_id'):
+        if task_id and hasattr(self.cache, "generate_entry_id"):
             # Make sure task_id is a string
             safe_task_id = str(task_id) if task_id is not None else None
             entry_id = self.cache.generate_entry_id(func_name, safe_task_id)
@@ -406,21 +391,19 @@ class AsyncTaskWorker:
 
         # Try regular invalidation using the same cache key function as caching
         from async_cache.key_utils import compose_key_functions, extract_key_component
-        
+
         # Create the same cache key function that's used for caching
         normal_cache_key_fn = compose_key_functions(
-            extract_key_component("func_name"),
-            extract_key_component("args"),
-            extract_key_component("kwargs")
+            extract_key_component("func_name"), extract_key_component("args"), extract_key_component("kwargs")
         )
-        
+
         result = await self.cache.invalidate(func_name, args, kwargs, cache_key_fn=normal_cache_key_fn)
         if result:
             return True
 
         # As a fallback for tests, try to look up all related tasks in the registry
         # and invalidate those
-        if hasattr(self.cache, '_cache') and hasattr(self.cache._cache, 'entry_key_map'):
+        if hasattr(self.cache, "_cache") and hasattr(self.cache._cache, "entry_key_map"):
             # Look for any entries that start with this function name
             any_invalidated = False
             for existing_id, cache_key in list(self.cache._cache.entry_key_map.items()):
@@ -570,15 +553,9 @@ class AsyncTaskWorker:
             if timeout is not None:
                 async with asyncio.timeout(timeout):
                     # Create a task for each future and wait for the first to complete
-                    done, pending = await asyncio.wait(
-                        futures,
-                        return_when=asyncio.FIRST_COMPLETED
-                    )
+                    done, pending = await asyncio.wait(futures, return_when=asyncio.FIRST_COMPLETED)
             else:
-                done, pending = await asyncio.wait(
-                    futures,
-                    return_when=asyncio.FIRST_COMPLETED
-                )
+                done, pending = await asyncio.wait(futures, return_when=asyncio.FIRST_COMPLETED)
 
             if not done:
                 raise TimeoutError("Timeout waiting for any task to complete")
@@ -631,7 +608,7 @@ class AsyncTaskWorker:
             logger.info(f"Task {task_id} is in state {task_status}")
 
             # Track if the task is currently running
-            task_running = (task_status == TaskStatus.RUNNING)
+            task_running = task_status == TaskStatus.RUNNING
 
             # If task is PENDING or similar non-running state, we can cancel it directly
             if not task_running:
@@ -643,10 +620,7 @@ class AsyncTaskWorker:
                 logger.info(f"Cancelled {'queued' if task_removed else 'pending'} task {task_id}")
 
                 # Notify futures (still holding the lock)
-                await self.future_manager.set_exception(
-                    task_id,
-                    TaskError("Task cancelled", task_id=task_id)
-                )
+                await self.future_manager.set_exception(task_id, TaskError("Task cancelled", task_id=task_id))
                 cancel_result = True
 
         # For running tasks, special handling with the worker pool is needed
@@ -671,10 +645,7 @@ class AsyncTaskWorker:
                     logger.info(f"Marked running task {task_id} as cancelled")
 
                     # Notify futures
-                    await self.future_manager.set_exception(
-                        task_id,
-                        TaskError("Task cancelled", task_id=task_id)
-                    )
+                    await self.future_manager.set_exception(task_id, TaskError("Task cancelled", task_id=task_id))
                     cancel_result = True
 
         return cancel_result
@@ -699,10 +670,10 @@ class AsyncTaskWorker:
     async def _on_task_started(self, task_id: str, task_info: Optional[TaskInfo], _: Any) -> None:
         """
         Callback when a task is started.
-        
+
         Args:
             task_id: ID of the task
-            task_info: Task info from WorkerPool (not used in AsyncTaskWorker implementation, 
+            task_info: Task info from WorkerPool (not used in AsyncTaskWorker implementation,
                       which retrieves task info from its own tasks dict)
             _: Not used
         """
@@ -710,13 +681,15 @@ class AsyncTaskWorker:
             if task_id in self.tasks:
                 await self.tasks[task_id].mark_started()
 
-    async def _on_task_completed(self, task_id: str, task_info: Optional[TaskInfo], result: Any, from_cache: bool = False) -> None:
+    async def _on_task_completed(
+        self, task_id: str, task_info: Optional[TaskInfo], result: Any, from_cache: bool = False
+    ) -> None:
         """
         Callback when a task is completed.
-        
+
         Args:
             task_id: ID of the task
-            task_info: Task info from WorkerPool (not used in AsyncTaskWorker implementation, 
+            task_info: Task info from WorkerPool (not used in AsyncTaskWorker implementation,
                       which retrieves task info from its own tasks dict)
             result: Task result
             from_cache: Whether the result was served from cache
@@ -733,10 +706,10 @@ class AsyncTaskWorker:
     async def _on_task_failed(self, task_id: str, task_info: Optional[TaskInfo], error: str) -> None:
         """
         Callback when a task fails.
-        
+
         Args:
             task_id: ID of the task
-            task_info: Task info from WorkerPool (not used in AsyncTaskWorker implementation, 
+            task_info: Task info from WorkerPool (not used in AsyncTaskWorker implementation,
                       which retrieves task info from its own tasks dict)
             error: Error message
         """
@@ -750,10 +723,10 @@ class AsyncTaskWorker:
     async def _on_task_cancelled(self, task_id: str, task_info: Optional[TaskInfo], reason: str) -> None:
         """
         Callback when a task is cancelled.
-        
+
         Args:
             task_id: ID of the task
-            task_info: Task info from WorkerPool (not used in AsyncTaskWorker implementation, 
+            task_info: Task info from WorkerPool (not used in AsyncTaskWorker implementation,
                       which retrieves task info from its own tasks dict)
             reason: Reason for cancellation
         """
