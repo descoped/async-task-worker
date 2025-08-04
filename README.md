@@ -1,5 +1,12 @@
 # Async Task Worker
 
+[![Build Status](https://github.com/descoped/async-task-worker/actions/workflows/build-test.yml/badge.svg)](https://github.com/descoped/async-task-worker/actions/workflows/build-test.yml)
+[![Coverage](https://codecov.io/gh/descoped/async-task-worker/branch/master/graph/badge.svg)](https://codecov.io/gh/descoped/async-task-worker)
+[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Release](https://img.shields.io/github/v/release/descoped/async-task-worker)](https://github.com/descoped/async-task-worker/releases)
+[![PyPI - Version](https://img.shields.io/pypi/v/async-task-worker?color=blue)](https://pypi.org/project/async-task-worker/)
+
 A robust asynchronous task worker system for Python applications with built-in caching support. This library provides a flexible framework for executing and managing background tasks with features like priority scheduling, progress tracking, and result caching.
 
 ## Installation
